@@ -21,6 +21,8 @@ interface PasswordChangeInput {
   newPassword?: unknown;
 }
 
+const ADMIN_PASSWORD_MIN_LENGTH = 8;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -57,7 +59,7 @@ async function parseLoginInput(
     if (
       body.username.length < 1 ||
       body.username.length > 100 ||
-      body.password.length < 4 ||
+      body.password.length < ADMIN_PASSWORD_MIN_LENGTH ||
       body.password.length > 256
     )
       return null;
@@ -75,9 +77,9 @@ async function parsePasswordChangeInput(
     if (
       typeof body.currentPassword !== "string" ||
       typeof body.newPassword !== "string" ||
-      body.currentPassword.length < 4 ||
+      body.currentPassword.length < ADMIN_PASSWORD_MIN_LENGTH ||
       body.currentPassword.length > 256 ||
-      body.newPassword.length < 4 ||
+      body.newPassword.length < ADMIN_PASSWORD_MIN_LENGTH ||
       body.newPassword.length > 256 ||
       body.currentPassword === body.newPassword
     ) return null;
@@ -260,7 +262,7 @@ async function handleApi(
     if (!input)
       return errorResponse(
         "VALIDATION_ERROR",
-        "현재 비밀번호와 12자 이상의 새 비밀번호를 확인해 주세요.",
+        "현재 비밀번호와 8자 이상의 새 비밀번호를 확인해 주세요.",
         requestId,
         400,
       );

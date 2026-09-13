@@ -175,27 +175,32 @@ const uuid = () => crypto.randomUUID();
 const LOCAL_PIN_KEY = "admin-pin";
 const LOCAL_PIN_ITERATIONS = 100_000;
 const LOCAL_SESSION_KEY = "student-counseling-local-session";
+let inMemoryLocalSession = false;
 
 function hasLocalSession() {
   try {
-    // localStorage를 사용해 새로고침·브라우저 재시작 후에도 세션 유지
-    return localStorage.getItem(LOCAL_SESSION_KEY) === "authenticated";
+    return (
+      sessionStorage.getItem(LOCAL_SESSION_KEY) === "authenticated" ||
+      inMemoryLocalSession
+    );
   } catch {
-    return false;
+    return inMemoryLocalSession;
   }
 }
 
 function startLocalSession() {
+  inMemoryLocalSession = true;
   try {
-    localStorage.setItem(LOCAL_SESSION_KEY, "authenticated");
+    sessionStorage.setItem(LOCAL_SESSION_KEY, "authenticated");
   } catch {
     // 브라우저 저장소를 사용할 수 없는 환경(시크릿 모드 등)에서는 무시
   }
 }
 
 function endLocalSession() {
+  inMemoryLocalSession = false;
   try {
-    localStorage.removeItem(LOCAL_SESSION_KEY);
+    sessionStorage.removeItem(LOCAL_SESSION_KEY);
   } catch {
     // 저장소 접근 불가 시 무시
   }

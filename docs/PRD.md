@@ -669,7 +669,7 @@ Record 2
 
 Cloud Edition은 Cloudflare Access를 기본 인증 계층으로 사용한다.
 
-`workers.dev` 초기 배포처럼 Access 정책을 아직 연결하지 못한 환경에서는 Worker Secret 기반 관리자 로그인을 보조 인증 계층으로 사용할 수 있다. 초기 비밀번호는 충분한 엔트로피로 무작위 생성하며, 원문은 코드나 D1에 저장하지 않고 bcrypt 해시만 Secret으로 관리한다. 관리자가 앱에서 비밀번호를 변경한 뒤에는 bcrypt cost 12 해시와 변경 시각만 제한된 `admin_credentials` 테이블에 저장한다. 원문, salt, Worker Secret은 저장하지 않으며, 변경 즉시 기존 관리자 세션은 무효화한다. 로그인 세션은 짧은 만료시간의 `HttpOnly`, `Secure`, `SameSite=Strict` 쿠키를 사용한다.
+`workers.dev` 초기 배포처럼 Access 정책을 아직 연결하지 못한 환경에서는 Worker Secret 기반 관리자 로그인을 보조 인증 계층으로 사용할 수 있다. DB 관리자 비밀번호는 8자 이상으로 설정한다. 초기 비밀번호 원문은 Worker Secret 설정 절차로만 전달하며, 코드나 D1에는 저장하지 않는다. bcrypt cost 12 해시만 Worker Secret 또는 `admin_credentials`에 저장한다. 관리자가 앱에서 비밀번호를 변경하면 해시와 변경 시각만 갱신하며, 변경 즉시 기존 관리자 세션은 무효화한다. 로그인 세션은 짧은 만료시간의 `HttpOnly`, `Secure`, `SameSite=Strict` 쿠키를 사용한다.
 
 앱 내부 권한:
 

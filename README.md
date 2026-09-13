@@ -38,7 +38,7 @@ npm run db:migrate:local
 4. 최초 사용자의 `users`, `workspaces`, `workspace_members` 레코드를 migration 이후 등록합니다.
 5. GitHub 환경에 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` secret을 등록합니다.
 
-초기 관리자 로그인은 `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `SESSION_SECRET` Worker Secret을 사용합니다. 비밀번호 원문은 저장하지 않습니다.
+DB 관리자 비밀번호는 8자 이상이어야 합니다. 초기 비밀번호 원문은 저장하지 않고, bcrypt 해시를 `ADMIN_PASSWORD_HASH` Worker Secret으로 설정합니다. `ADMIN_USERNAME`과 `SESSION_SECRET`도 Worker Secret으로 설정합니다.
 
 Preview와 Production은 서로 다른 D1 binding을 사용합니다. 운영 migration은 백업과 Preview 검증 후 명시적으로 적용합니다.
 

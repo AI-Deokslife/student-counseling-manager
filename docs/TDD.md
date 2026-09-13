@@ -1065,12 +1065,12 @@ Authorization
 ```text
 관리자 아이디
 +
-무작위 초기 비밀번호의 bcrypt cost 12 해시 (Worker Secret)
+초기 비밀번호의 bcrypt cost 12 해시 (Worker Secret)
 → HMAC 서명 세션
 → HttpOnly / Secure / SameSite=Strict Cookie
 ```
 
-비밀번호 원문, salt, 세션 서명키는 Git과 D1에 저장하지 않는다. 초기 해시는 Worker Secret으로 유지한다. 앱에서 변경한 비밀번호는 bcrypt cost 12 해시와 변경 시각만 `admin_credentials`에 저장할 수 있으며, 해당 시각을 관리자 세션 버전에 포함해 비밀번호 변경 시 기존 관리자 세션을 무효화한다. Access가 활성화되면 Access identity를 우선 사용한다.
+비밀번호 원문, salt, 세션 서명키는 Git과 D1에 저장하지 않는다. 로그인과 변경 시 DB 관리자 비밀번호는 8자 이상 256자 이하로 검증한다. 초기 해시는 Worker Secret으로 유지하고, 앱에서 변경한 비밀번호는 bcrypt cost 12 해시와 변경 시각만 `admin_credentials`에 저장하며, 해당 시각을 관리자 세션 버전에 포함해 비밀번호 변경 시 기존 관리자 세션을 무효화한다. Access가 활성화되면 Access identity를 우선 사용한다.
 
 ---
 

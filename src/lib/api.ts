@@ -178,7 +178,7 @@ const remoteApi = {
     });
     if (!response.ok) {
       if (response.status === 401) throw new Error("현재 비밀번호가 올바르지 않습니다.");
-      if (response.status === 400) throw new Error("새 비밀번호는 12자 이상이어야 하며 현재 비밀번호와 달라야 합니다.");
+      if (response.status === 400) throw new Error("새 비밀번호는 8자 이상이어야 하며 현재 비밀번호와 달라야 합니다.");
       throw new Error("비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   },

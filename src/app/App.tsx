@@ -2529,7 +2529,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
-    const minimumLength = mode === "local" ? 4 : 12;
+    const minimumLength = mode === "local" ? 4 : 8;
     if (newPassword.length < minimumLength) {
       setFormError(`새 비밀번호는 ${minimumLength}자 이상으로 입력해 주세요.`);
       return;
