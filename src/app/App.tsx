@@ -49,6 +49,7 @@ import {
   uploadBackupToCloud,
 } from "../lib/api";
 import type { AppMode, CurrentUser } from "../lib/api";
+import { koreanHolidays } from "../lib/koreanHolidays";
 import { importLocalBackup, localBackup } from "../lib/localDb";
 import { maskStudentName, studentLabel } from "../lib/privacy";
 import { downloadStudentCounselingExcel } from "../lib/studentCounselingExport";
@@ -1934,6 +1935,7 @@ function CalendarPage() {
     return day >= 1 && day <= daysInMonth ? day : null;
   });
   const dateFor = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
+  const holidays = koreanHolidays(cursor.getFullYear());
   const moveMonth = (offset: number) => {
     const next = new Date(cursor.getFullYear(), cursor.getMonth() + offset, 1);
     setCursor(next);
@@ -2065,19 +2067,27 @@ function CalendarPage() {
                 ) ?? [])
               : [];
             const selected = date === selectedDate;
+            const holidayName = date ? holidays.get(date) : undefined;
+            const isHoliday = Boolean(holidayName);
             return (
               <button
                 key={`${month}-${index}`}
                 disabled={!day}
                 onClick={() => day && setSelectedDate(date)}
-                className={`min-h-[72px] border-b border-r border-gray-100 p-1.5 text-left align-top sm:min-h-[104px] sm:p-2 ${day ? "hover:bg-mint-50/50" : "bg-gray-50/60"} ${selected ? "bg-mint-50 ring-2 ring-inset ring-mint-500" : ""}`}
+                title={holidayName}
+                className={`flex min-h-[72px] flex-col items-start justify-start border-b border-r border-gray-100 p-2 text-left align-top sm:min-h-[104px] sm:p-3 ${day ? "hover:bg-mint-50/50" : "bg-gray-50/60"} ${selected ? "bg-mint-50 ring-2 ring-inset ring-mint-500" : ""}`}
               >
                 <span
-                  className={`inline-flex size-6 items-center justify-start rounded-full text-xs font-bold sm:size-7 sm:text-sm ${date === now.toLocaleDateString("en-CA") ? "bg-mint-600 px-1.5 text-white" : index % 7 === 0 ? "text-rose-500" : "text-gray-700"}`}
+                  className={`inline-flex min-w-7 items-center justify-start rounded-full px-1 text-base font-extrabold leading-7 sm:min-w-8 sm:px-1.5 sm:text-lg sm:leading-8 ${date === now.toLocaleDateString("en-CA") ? "bg-mint-600 text-white" : isHoliday || index % 7 === 0 ? "text-rose-500" : "text-gray-700"}`}
                 >
                   {day}
                 </span>
-                <div className="mt-1 space-y-1">
+                {holidayName && (
+                  <span className="mt-0.5 truncate text-[9px] font-bold text-rose-500 sm:text-[10px]">
+                    {holidayName}
+                  </span>
+                )}
+                <div className="mt-1 w-full space-y-1">
                   {daySchedules.slice(0, 2).map((item) => (
                     <span
                       key={item.id}
