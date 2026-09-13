@@ -117,6 +117,12 @@ interface LocalAudit {
   created_at: string;
 }
 
+interface LocalSetting {
+  key: string;
+  value: string;
+  updated_at: string;
+}
+
 export class LocalCounselingDb extends Dexie {
   students!: Table<LocalStudent, string>;
   enrollments!: Table<LocalEnrollment, string>;
@@ -124,6 +130,7 @@ export class LocalCounselingDb extends Dexie {
   counselingRecords!: Table<LocalCounseling, string>;
   schedules!: Table<LocalSchedule, string>;
   auditLogs!: Table<LocalAudit, string>;
+  settings!: Table<LocalSetting, string>;
 
   constructor() {
     super("student-counseling-manager-v2");
@@ -137,6 +144,9 @@ export class LocalCounselingDb extends Dexie {
       schedules: "id, student_id, scheduled_date, status, deleted_at",
       auditLogs: "id, entity_type, entity_id, created_at",
     });
+    this.version(2).stores({
+      settings: "key",
+    });
   }
 }
 
@@ -145,7 +155,113 @@ export const localDb = new LocalCounselingDb();
 const now = () => new Date().toISOString();
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+const weekBounds = (date: string) => {
+  const monday = new Date(`${date}T00:00:00+09:00`);
+  const day = monday.getDay();
+  monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const toDate = (value: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(value);
+  return { monday: toDate(monday), sunday: toDate(sunday) };
+};
 const uuid = () => crypto.randomUUID();
+
+const LOCAL_PIN_KEY = "admin-pin";
+const LOCAL_PIN_ITERATIONS = 100_000;
+const LOCAL_SESSION_KEY = "student-counseling-local-session";
+
+function hasLocalSession() {
+  try {
+    // localStorage를 사용해 새로고침·브라우저 재시작 후에도 세션 유지
+    return localStorage.getItem(LOCAL_SESSION_KEY) === "authenticated";
+  } catch {
+    return false;
+  }
+}
+
+function startLocalSession() {
+  try {
+    localStorage.setItem(LOCAL_SESSION_KEY, "authenticated");
+  } catch {
+    // 브라우저 저장소를 사용할 수 없는 환경(시크릿 모드 등)에서는 무시
+  }
+}
+
+function endLocalSession() {
+  try {
+    localStorage.removeItem(LOCAL_SESSION_KEY);
+  } catch {
+    // 저장소 접근 불가 시 무시
+  }
+}
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string) => {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+};
+
+async function derivePinHash(pin: string, salt: Uint8Array) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(pin),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt: salt as unknown as BufferSource,
+      iterations: LOCAL_PIN_ITERATIONS,
+    },
+    key,
+    256,
+  );
+  return bytesToBase64(new Uint8Array(bits));
+}
+
+async function createPinCredential(pin: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await derivePinHash(pin, salt);
+  return `v1:${bytesToBase64(salt)}:${hash}`;
+}
+
+async function getLocalPinCredential() {
+  const stored = await localDb.settings.get(LOCAL_PIN_KEY);
+  if (stored) return stored.value;
+
+  const initialCredential = await createPinCredential("1234");
+  await localDb.settings.put({
+    key: LOCAL_PIN_KEY,
+    value: initialCredential,
+    updated_at: now(),
+  });
+  return initialCredential;
+}
+
+async function verifyLocalPin(pin: string, credential: string) {
+  const [version, encodedSalt, expectedHash] = credential.split(":");
+  if (version !== "v1" || !encodedSalt || !expectedHash) return false;
+
+  try {
+    return (await derivePinHash(pin, base64ToBytes(encodedSalt))) === expectedHash;
+  } catch {
+    return false;
+  }
+}
 
 async function ensureTypes() {
   if ((await localDb.counselingTypes.count()) > 0) return;
@@ -276,14 +392,48 @@ function parseBackup(backup: unknown) {
 }
 
 export const localApi = {
+  login: async (_username: string, password: string) => {
+    if (!password) throw new Error("비밀번호를 입력해 주세요.");
+    const credential = await getLocalPinCredential();
+    if (!(await verifyLocalPin(password, credential))) {
+      throw new Error("관리자 비밀번호가 맞지 않습니다.");
+    }
+    startLocalSession();
+  },
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    if (!hasLocalSession()) throw new Error("다시 로그인해 주세요.");
+    if (newPassword.length < 4) {
+      throw new Error("새 비밀번호는 4자 이상으로 설정해 주세요.");
+    }
+    if (newPassword.length > 256) {
+      throw new Error("새 비밀번호는 256자 이하여야 합니다.");
+    }
+    const credential = await getLocalPinCredential();
+    if (!(await verifyLocalPin(currentPassword, credential))) {
+      throw new Error("현재 비밀번호가 맞지 않습니다.");
+    }
+    if (currentPassword === newPassword) {
+      throw new Error("현재 비밀번호와 다른 비밀번호를 입력해 주세요.");
+    }
+    await localDb.settings.put({
+      key: LOCAL_PIN_KEY,
+      value: await createPinCredential(newPassword),
+      updated_at: now(),
+    });
+  },
   health: async () => ({
     status: "ok" as const,
     appVersion: "0.1.0",
     database: "ok" as const,
     environment: "local" as const,
   }),
-  me: async () => LOCAL_USER,
-  logout: async () => undefined,
+  me: async () => {
+    if (!hasLocalSession()) throw new Error("LOCAL_UNAUTHENTICATED");
+    return LOCAL_USER;
+  },
+  logout: async () => {
+    endLocalSession();
+  },
   students: studentsWithEnrollment,
   student: async (id: string): Promise<StudentDetail> => {
     const student = await localDb.students.get(id);
@@ -435,6 +585,19 @@ export const localApi = {
   },
   trashStudent: async (id: string) =>
     localDb.students.update(id, { deleted_at: now(), updated_at: now() }),
+  trashStudents: async (ids: string[]) => {
+    const updatedAt = now();
+    await localDb.transaction("rw", localDb.students, async () => {
+      await Promise.all(
+        ids.map((id) =>
+          localDb.students.update(id, {
+            deleted_at: updatedAt,
+            updated_at: updatedAt,
+          }),
+        ),
+      );
+    });
+  },
   restoreStudent: async (id: string) =>
     localDb.students.update(id, { deleted_at: null, updated_at: now() }),
   counselingTypes: async (): Promise<CounselingType[]> => {
@@ -513,29 +676,11 @@ export const localApi = {
     }),
   dashboard: async (): Promise<DashboardData> => {
     const date = today();
-    const [students, records, schedules] = await Promise.all([
+    const week = weekBounds(date);
+    const [students, records] = await Promise.all([
       studentsWithEnrollment(),
       counselingSummaries(),
-      localDb.schedules.filter((schedule) => !schedule.deleted_at).toArray(),
     ]);
-    const studentById = new Map(
-      (await localDb.students.toArray()).map((student) => [
-        student.id,
-        student,
-      ]),
-    );
-    const todaySchedules = schedules
-      .filter(
-        (schedule) =>
-          schedule.status === "scheduled" && schedule.scheduled_date === date,
-      )
-      .map((schedule) => ({
-        id: schedule.id,
-        student_name:
-          studentById.get(schedule.student_id)?.name ?? "삭제된 학생",
-        scheduled_time: schedule.scheduled_time,
-        note: schedule.note,
-      }));
     const followUps = records.filter(
       (record) =>
         ["follow_up", "in_progress"].includes(record.status) &&
@@ -545,25 +690,27 @@ export const localApi = {
       stats: {
         students: students.length,
         thisWeekCounseling: records.filter(
-          (record) => record.counseling_date >= date,
+          (record) =>
+            record.counseling_date >= week.monday &&
+            record.counseling_date <= week.sunday,
         ).length,
         todayCounseling: records.filter(
           (record) => record.counseling_date === date,
         ).length,
         followUpRequired: followUps.length,
       },
-      todaySchedules,
-      overdueFollowUps: followUps
-        .filter((record) => record.follow_up_date! < date)
+      todayCounseling: records
+        .filter((record) => record.counseling_date === date)
         .map((record) => ({
           id: record.id,
           student_name: record.student_name,
+          counseling_time: null,
           summary: record.summary,
-          follow_up_date: record.follow_up_date!,
         })),
-      upcomingFollowUps: followUps
-        .filter((record) => record.follow_up_date! >= date)
-        .slice(0, 20)
+      followUps: followUps
+        .sort((left, right) =>
+          left.follow_up_date!.localeCompare(right.follow_up_date!),
+        )
         .map((record) => ({
           id: record.id,
           student_name: record.student_name,
