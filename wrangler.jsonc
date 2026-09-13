@@ -21,6 +21,9 @@
     "APP_ENV": "local",
     "APP_VERSION": "0.1.0"
   },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "env": {
     "preview": {
       "name": "student-counseling-manager-preview",

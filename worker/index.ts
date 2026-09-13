@@ -1,4 +1,5 @@
 import { authenticate } from "./auth";
+import { buildPushPayload, type PushSubscription } from "@block65/webcrypto-web-push";
 import { errorResponse, json, withSecurityHeaders } from "./http";
 import {
   createSession,
@@ -21,7 +22,13 @@ interface PasswordChangeInput {
   newPassword?: unknown;
 }
 
+interface PushSubscriptionInput {
+  endpoint?: unknown;
+  keys?: { p256dh?: unknown; auth?: unknown };
+}
+
 const ADMIN_PASSWORD_MIN_LENGTH = 8;
+const REMINDER_MESSAGE = "1시간 후 상담 일정이 있습니다.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -292,6 +299,46 @@ async function handleApi(
       sessionCookie(await createSession(env.SESSION_SECRET, updatedAt)),
     );
     return response;
+  }
+
+  if (pathname === "/api/v1/notifications/push/config" && request.method === "GET") {
+    const user = await authenticate(request, env);
+    if (!user) return errorResponse("UNAUTHENTICATED", "로그인이 필요합니다.", requestId, 401);
+    if (!env.VAPID_PUBLIC_KEY)
+      return errorResponse("PUSH_NOT_CONFIGURED", "푸시 알림이 아직 설정되지 않았습니다.", requestId, 503);
+    return json({ data: { publicKey: env.VAPID_PUBLIC_KEY }, meta: { requestId } }, requestId);
+  }
+
+  if (pathname === "/api/v1/notifications/push" && request.method === "POST") {
+    const user = await authenticate(request, env);
+    if (!user) return errorResponse("UNAUTHENTICATED", "로그인이 필요합니다.", requestId, 401);
+    if (user.role === "readonly")
+      return errorResponse("FORBIDDEN", "알림 설정 권한이 없습니다.", requestId, 403);
+    const body = await parseObject(request) as PushSubscriptionInput | null;
+    const endpoint = typeof body?.endpoint === "string" ? body.endpoint : "";
+    const p256dh = typeof body?.keys?.p256dh === "string" ? body.keys.p256dh : "";
+    const auth = typeof body?.keys?.auth === "string" ? body.keys.auth : "";
+    if (!endpoint.startsWith("https://") || endpoint.length > 2_000 || !p256dh || !auth)
+      return errorResponse("VALIDATION_ERROR", "푸시 구독 정보를 확인해 주세요.", requestId, 400);
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO push_subscriptions (id, workspace_id, user_email, endpoint, p256dh, auth, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET workspace_id=excluded.workspace_id, user_email=excluded.user_email,
+         p256dh=excluded.p256dh, auth=excluded.auth, updated_at=excluded.updated_at`,
+    ).bind(crypto.randomUUID(), user.workspace.id, user.email, endpoint, p256dh, auth, now, now).run();
+    return json({ data: { enabled: true }, meta: { requestId } }, requestId, 201);
+  }
+
+  if (pathname === "/api/v1/notifications/push" && request.method === "DELETE") {
+    const user = await authenticate(request, env);
+    if (!user) return errorResponse("UNAUTHENTICATED", "로그인이 필요합니다.", requestId, 401);
+    const body = await parseObject(request) as PushSubscriptionInput | null;
+    const endpoint = typeof body?.endpoint === "string" ? body.endpoint : "";
+    if (!endpoint) return errorResponse("VALIDATION_ERROR", "푸시 구독 정보를 확인해 주세요.", requestId, 400);
+    await env.DB.prepare("DELETE FROM push_subscriptions WHERE workspace_id = ? AND user_email = ? AND endpoint = ?")
+      .bind(user.workspace.id, user.email, endpoint).run();
+    return json({ data: { enabled: false }, meta: { requestId } }, requestId);
   }
 
   if (request.method === "GET" && pathname === "/api/v1/me") {
@@ -2227,6 +2274,67 @@ async function handleApi(
   );
 }
 
+interface ReminderRow {
+  schedule_id: string;
+  subscription_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+async function sendScheduleReminders(env: Env) {
+  if (
+    env.APP_ENV !== "production" ||
+    !env.VAPID_PUBLIC_KEY ||
+    !env.VAPID_PRIVATE_KEY ||
+    !env.VAPID_SUBJECT
+  ) return;
+
+  const now = new Date();
+  const windowStart = new Date(now.getTime() + 55 * 60_000).toISOString();
+  const windowEnd = new Date(now.getTime() + 65 * 60_000).toISOString();
+  const reminders = await env.DB.prepare(
+    `SELECT schedules.id AS schedule_id, push_subscriptions.id AS subscription_id,
+      push_subscriptions.endpoint, push_subscriptions.p256dh, push_subscriptions.auth
+     FROM schedules
+     INNER JOIN push_subscriptions ON push_subscriptions.workspace_id = schedules.workspace_id
+     LEFT JOIN schedule_reminder_deliveries
+       ON schedule_reminder_deliveries.schedule_id = schedules.id
+       AND schedule_reminder_deliveries.subscription_id = push_subscriptions.id
+     WHERE schedules.status = 'scheduled' AND schedules.deleted_at IS NULL
+       AND schedules.scheduled_time IS NOT NULL
+       AND datetime(schedules.scheduled_date || 'T' || schedules.scheduled_time || ':00+09:00')
+         BETWEEN datetime(?) AND datetime(?)
+       AND schedule_reminder_deliveries.schedule_id IS NULL`,
+  ).bind(windowStart, windowEnd).all<ReminderRow>();
+
+  await Promise.all(reminders.results.map(async (reminder) => {
+    const subscription: PushSubscription = {
+      endpoint: reminder.endpoint,
+      expirationTime: null,
+      keys: { p256dh: reminder.p256dh, auth: reminder.auth },
+    };
+    try {
+      const payload = await buildPushPayload(
+        { data: { title: "상담 일정 알림", body: REMINDER_MESSAGE }, options: { ttl: 3_600, urgency: "high" } },
+        subscription,
+        { subject: env.VAPID_SUBJECT!, publicKey: env.VAPID_PUBLIC_KEY!, privateKey: env.VAPID_PRIVATE_KEY! },
+      );
+      const response = await fetch(reminder.endpoint, payload);
+      if (response.status === 404 || response.status === 410) {
+        await env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?").bind(reminder.subscription_id).run();
+        return;
+      }
+      if (!response.ok) return;
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO schedule_reminder_deliveries (schedule_id, subscription_id, sent_at) VALUES (?, ?, ?)",
+      ).bind(reminder.schedule_id, reminder.subscription_id, now.toISOString()).run();
+    } catch {
+      // Do not log endpoints or schedule data. A later cron run can retry safely.
+    }
+  }));
+}
+
 const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
@@ -2246,6 +2354,13 @@ const worker = {
     }
 
     return withSecurityHeaders(await env.ASSETS.fetch(request), requestId);
+  },
+  async scheduled(
+    _event: unknown,
+    env: Env,
+    ctx: { waitUntil(promise: Promise<unknown>): void },
+  ) {
+    ctx.waitUntil(sendScheduleReminders(env));
   },
 };
 

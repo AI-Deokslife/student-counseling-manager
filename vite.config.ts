@@ -45,6 +45,7 @@ export default defineConfig({
         ]
       },
       workbox: {
+        importScripts: ['/push-handler.js'],
         navigateFallback: '/index.html',
         runtimeCaching: [],
         navigateFallbackDenylist: [/^\/api\//]

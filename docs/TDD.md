@@ -1144,6 +1144,10 @@ SKIP_WAITING
 
 `beforeinstallprompt`는 최초 로그인 화면과 대시보드에서 공통으로 감지한다. 설치가 수락되거나 standalone display mode이면 설치 버튼을 숨긴다. 새 Service Worker가 waiting 상태일 때만 업데이트 버튼을 표시하며, 업데이트 적용 뒤에는 다시 표시하지 않는다.
 
+### Push Reminder
+
+Cloud Edition은 기기별 Web Push 구독을 `push_subscriptions`에 저장한다. Worker Cron은 5분마다 실행하며, `Asia/Seoul` 기준으로 55~65분 뒤에 시작하는 예정 상담을 찾아 기기별로 한 번만 발송한다. VAPID 공개키·개인키와 발신자 식별자는 Worker Secret으로 관리한다. 푸시 payload에는 학생 이름, 상담 내용, 메모를 포함하지 않는다.
+
 ---
 
 ## 27. 상담 Draft

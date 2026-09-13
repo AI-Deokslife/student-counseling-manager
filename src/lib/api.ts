@@ -188,6 +188,29 @@ const remoteApi = {
       headers: { Accept: "application/json" },
     });
   },
+  pushNotificationConfig: async (): Promise<{ publicKey: string }> => {
+    const response = await fetch("/api/v1/notifications/push/config", {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error("푸시 알림을 설정하지 못했습니다.");
+    return ((await response.json()) as { data: { publicKey: string } }).data;
+  },
+  enablePushNotifications: async (subscription: PushSubscriptionJSON) => {
+    const response = await fetch("/api/v1/notifications/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(subscription),
+    });
+    if (!response.ok) throw new Error("알림을 켜지 못했습니다. 권한을 확인해 주세요.");
+  },
+  disablePushNotifications: async (endpoint: string) => {
+    const response = await fetch("/api/v1/notifications/push", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ endpoint }),
+    });
+    if (!response.ok) throw new Error("알림을 끄지 못했습니다.");
+  },
   students: async (): Promise<StudentSummary[]> => {
     const response = await fetch("/api/v1/students", {
       headers: { Accept: "application/json" },

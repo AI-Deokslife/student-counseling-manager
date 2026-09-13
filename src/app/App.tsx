@@ -2579,7 +2579,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={mode === "local" ? 4 : 12}
+            minLength={mode === "local" ? 4 : 8}
             required
             className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
           />
@@ -2591,7 +2591,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={mode === "local" ? 4 : 12}
+            minLength={mode === "local" ? 4 : 8}
             required
             className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
           />
@@ -2618,6 +2618,75 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
         </p>
       )}
     </form>
+  );
+}
+
+function PushNotificationPanel() {
+  const [enabled, setEnabled] = useState(false);
+  const [message, setMessage] = useState("");
+  const toggle = useMutation({
+    mutationFn: async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window))
+        throw new Error("이 브라우저에서는 푸시 알림을 지원하지 않습니다.");
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await api.disablePushNotifications(existing.endpoint);
+        await existing.unsubscribe();
+        return false;
+      }
+      if (Notification.permission === "denied")
+        throw new Error("브라우저 설정에서 알림 권한을 허용해 주세요.");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("알림 권한이 필요합니다.");
+      const { publicKey } = await api.pushNotificationConfig();
+      const applicationServerKey = Uint8Array.from(
+        atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")),
+        (character) => character.charCodeAt(0),
+      );
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      });
+      await api.enablePushNotifications(subscription.toJSON());
+      return true;
+    },
+    onSuccess: (value) => {
+      setEnabled(value);
+      setMessage(value ? "1시간 전 일정 알림을 켰습니다." : "일정 알림을 껐습니다.");
+    },
+    onError: (error) => setMessage(error.message),
+  });
+
+  useEffect(() => {
+    void navigator.serviceWorker?.ready.then(async (registration) => {
+      setEnabled(Boolean(await registration.pushManager.getSubscription()));
+    });
+  }, []);
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel">
+      <span className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-700">
+        <Bell size={20} />
+      </span>
+      <h2 className="mt-4 font-extrabold">상담 일정 알림</h2>
+      <p className="mt-1 text-sm leading-6 text-gray-500">
+        상담 1시간 전에 이 기기로 알림을 보냅니다. 학생 이름과 상담 내용은 알림에 포함하지 않습니다.
+      </p>
+      <button
+        onClick={() => { setMessage(""); toggle.mutate(); }}
+        disabled={toggle.isPending}
+        className="mt-4 flex h-10 items-center gap-2 rounded-md bg-mint-600 px-4 text-sm font-extrabold text-white disabled:opacity-50"
+      >
+        {toggle.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Bell size={16} />}
+        {enabled ? "알림 끄기" : "1시간 전 알림 켜기"}
+      </button>
+      {message && (
+        <p className={`mt-3 text-xs font-bold ${toggle.isError ? "text-rose-600" : "text-mint-700"}`}>
+          {message}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -2658,6 +2727,7 @@ function SettingsCore({ mode }: { mode: AppMode }) {
       </header>
       <section className="mt-6 grid gap-4 sm:grid-cols-2">
         <PasswordChangePanel mode={mode} />
+        {mode === "cloud" && <PushNotificationPanel />}
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel">
           <span className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-700">
             <Download size={20} />

@@ -22,6 +22,9 @@ export interface Env {
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD_HASH?: string;
   SESSION_SECRET?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 export type AppRole = 'owner' | 'admin' | 'teacher' | 'readonly';
