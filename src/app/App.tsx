@@ -2743,7 +2743,19 @@ function SettingsCore({ mode }: { mode: AppMode }) {
       </header>
       <section className="mt-6 grid gap-4 sm:grid-cols-2">
         <PasswordChangePanel mode={mode} />
-        {mode === "cloud" && <PushNotificationPanel />}
+        {mode === "cloud" ? (
+          <PushNotificationPanel />
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel">
+            <span className="grid size-10 place-items-center rounded-lg bg-gray-100 text-gray-600">
+              <Bell size={20} />
+            </span>
+            <h2 className="mt-4 font-extrabold">상담 일정 알림</h2>
+            <p className="mt-1 text-sm leading-6 text-gray-500">
+              1시간 전 알림은 서버가 보내므로 DB 모드에서만 사용할 수 있습니다. 위의 데이터 저장 위치에서 DB 모드로 전환해 주세요.
+            </p>
+          </div>
+        )}
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel">
           <span className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-700">
             <Download size={20} />
@@ -2908,7 +2920,7 @@ function RestorePanel() {
     }
   };
   return (
-    <section className="mx-auto mb-28 mt-[-80px] w-[calc(100%-2rem)] max-w-[968px] rounded-lg border border-gray-200 bg-white p-5 shadow-panel sm:mt-[-72px] lg:mb-10">
+    <section className="mx-auto mb-28 mt-6 w-[calc(100%-2rem)] max-w-[968px] rounded-lg border border-gray-200 bg-white p-5 shadow-panel lg:mb-10">
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-700">
           <RotateCcw size={20} />
