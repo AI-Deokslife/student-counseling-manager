@@ -338,11 +338,19 @@ function LoginScreen({
                 </button>
               </span>
             </label>
-            {mode === "local" && (
+            {mode === "local" ? (
               <p className="text-xs text-gray-400">
                 임시 비밀번호:{" "}
                 <span className="font-bold text-gray-500">1234</span>
               </p>
+            ) : (
+              <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-800">
+                <p className="font-extrabold">DB 모드 테스트 계정</p>
+                <p>
+                  아이디: <span className="font-bold">admin</span>
+                </p>
+                <p>임시 비밀번호는 관리자에게 전달받은 값을 사용하세요. 로그인 후 변경할 수 있습니다.</p>
+              </div>
             )}
             {login.isError && (
               <p
