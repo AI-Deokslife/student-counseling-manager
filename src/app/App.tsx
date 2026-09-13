@@ -322,7 +322,7 @@ function LoginScreen({
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
                   required
-                  minLength={mode === "local" ? 4 : 8}
+                  minLength={4}
                   maxLength={256}
                   className="h-12 w-full rounded-md border border-gray-300 bg-white px-4 pr-12 text-sm outline-none transition focus:border-mint-500 focus:ring-3 focus:ring-mint-100"
                   placeholder="비밀번호를 입력하세요"

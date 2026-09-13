@@ -57,7 +57,7 @@ async function parseLoginInput(
     if (
       body.username.length < 1 ||
       body.username.length > 100 ||
-      body.password.length < 8 ||
+      body.password.length < 4 ||
       body.password.length > 256
     )
       return null;
@@ -75,9 +75,9 @@ async function parsePasswordChangeInput(
     if (
       typeof body.currentPassword !== "string" ||
       typeof body.newPassword !== "string" ||
-      body.currentPassword.length < 8 ||
+      body.currentPassword.length < 4 ||
       body.currentPassword.length > 256 ||
-      body.newPassword.length < 12 ||
+      body.newPassword.length < 4 ||
       body.newPassword.length > 256 ||
       body.currentPassword === body.newPassword
     ) return null;
