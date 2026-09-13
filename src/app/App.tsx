@@ -323,7 +323,7 @@ function LoginScreen({
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
                   required
-                  minLength={4}
+                  minLength={8}
                   maxLength={256}
                   className="h-12 w-full rounded-md border border-gray-300 bg-white px-4 pr-12 text-sm outline-none transition focus:border-mint-500 focus:ring-3 focus:ring-mint-100"
                   placeholder="비밀번호를 입력하세요"
@@ -341,7 +341,7 @@ function LoginScreen({
             {mode === "local" ? (
               <p className="text-xs text-gray-400">
                 임시 비밀번호:{" "}
-                <span className="font-bold text-gray-500">1234</span>
+                <span className="font-bold text-gray-500">12345678</span>
               </p>
             ) : (
               <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-800">
@@ -2547,7 +2547,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
-    const minimumLength = mode === "local" ? 4 : 8;
+    const minimumLength = 8;
     if (newPassword.length < minimumLength) {
       setFormError(`새 비밀번호는 ${minimumLength}자 이상으로 입력해 주세요.`);
       return;
@@ -2587,7 +2587,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={mode === "local" ? 4 : 8}
+            minLength={8}
             required
             className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
           />
@@ -2599,7 +2599,7 @@ function PasswordChangePanel({ mode }: { mode: AppMode }) {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={mode === "local" ? 4 : 8}
+            minLength={8}
             required
             className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
           />

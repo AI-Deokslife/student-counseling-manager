@@ -174,6 +174,7 @@ const uuid = () => crypto.randomUUID();
 
 const LOCAL_PIN_KEY = "admin-pin";
 const LOCAL_PIN_ITERATIONS = 100_000;
+const INITIAL_LOCAL_PASSWORD = "12345678";
 const LOCAL_SESSION_KEY = "student-counseling-local-session";
 let inMemoryLocalSession = false;
 
@@ -248,7 +249,7 @@ async function getLocalPinCredential() {
   const stored = await localDb.settings.get(LOCAL_PIN_KEY);
   if (stored) return stored.value;
 
-  const initialCredential = await createPinCredential("1234");
+  const initialCredential = await createPinCredential(INITIAL_LOCAL_PASSWORD);
   await localDb.settings.put({
     key: LOCAL_PIN_KEY,
     value: initialCredential,
@@ -407,8 +408,8 @@ export const localApi = {
   },
   changePassword: async (currentPassword: string, newPassword: string) => {
     if (!hasLocalSession()) throw new Error("다시 로그인해 주세요.");
-    if (newPassword.length < 4) {
-      throw new Error("새 비밀번호는 4자 이상으로 설정해 주세요.");
+    if (newPassword.length < 8) {
+      throw new Error("새 비밀번호는 8자 이상으로 설정해 주세요.");
     }
     if (newPassword.length > 256) {
       throw new Error("새 비밀번호는 256자 이하여야 합니다.");

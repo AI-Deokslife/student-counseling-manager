@@ -885,7 +885,7 @@ db.version(1).stores({
 
 사진/첨부파일은 Base64가 아니라 Blob으로 저장한다.
 
-로컬 관리자 PIN은 `settings` store의 `admin-pin` key에 salt와 PBKDF2-SHA-256 검증값으로 저장한다. 초기 PIN은 `1234`이며, 로그인 세션은 `sessionStorage`에만 유지해 같은 탭의 새로고침에는 유지되고 로그아웃 또는 탭 종료 시 제거한다. 백업 파일에는 PIN 검증값과 로그인 세션을 포함하지 않는다.
+로컬 관리자 PIN은 `settings` store의 `admin-pin` key에 salt와 PBKDF2-SHA-256 검증값으로 저장한다. 초기 PIN은 `12345678`이며 비밀번호는 최소 8자 이상으로 설정한다. 로그인 세션은 `sessionStorage`에만 유지해 같은 탭의 새로고침에는 유지되고 로그아웃 또는 탭 종료 시 제거한다. 백업 파일에는 PIN 검증값과 로그인 세션을 포함하지 않는다.
 
 ---
 

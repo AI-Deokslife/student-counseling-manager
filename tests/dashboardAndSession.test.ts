@@ -84,16 +84,19 @@ describe("local administrator access", () => {
       "관리자 비밀번호가 맞지 않습니다.",
     );
 
-    await localApi.login("local", "1234");
+    await localApi.login("local", "12345678");
     await expect(localApi.me()).resolves.toMatchObject({ role: "owner" });
 
-    await localApi.changePassword("1234", "5678");
+    await expect(localApi.changePassword("12345678", "1234")).rejects.toThrow(
+      "새 비밀번호는 8자 이상으로 설정해 주세요.",
+    );
+    await localApi.changePassword("12345678", "87654321");
     await localApi.logout();
     await expect(localApi.me()).rejects.toThrow("LOCAL_UNAUTHENTICATED");
-    await expect(localApi.login("local", "1234")).rejects.toThrow(
+    await expect(localApi.login("local", "12345678")).rejects.toThrow(
       "관리자 비밀번호가 맞지 않습니다.",
     );
-    await expect(localApi.login("local", "5678")).resolves.toBeUndefined();
+    await expect(localApi.login("local", "87654321")).resolves.toBeUndefined();
   });
 });
 
