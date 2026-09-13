@@ -30,7 +30,12 @@ describe("GET /api/v1/health", () => {
       createEnv(),
     );
     const body = (await response.json()) as {
-      data: { status: string; appVersion: string; database: string };
+      data: {
+        status: string;
+        appVersion: string;
+        database: string;
+        environment: string;
+      };
       meta: { requestId: string };
     };
 
@@ -41,6 +46,7 @@ describe("GET /api/v1/health", () => {
       status: "ok",
       appVersion: "0.1.0",
       database: "ok",
+      environment: "local",
     });
   });
 
@@ -53,6 +59,46 @@ describe("GET /api/v1/health", () => {
 
     expect(response.status).toBe(503);
     expect(body.data.database).toBe("unavailable");
+  });
+});
+
+describe("GET /api/v1/counseling-types", () => {
+  it("returns active workspace counseling types in display order", async () => {
+    const membership = {
+      email: "teacher@example.com",
+      display_name: "김선생",
+      role: "teacher",
+      workspace_id: "1429c877-c06c-498d-a28e-296610483a4a",
+      workspace_name: "마음잇기",
+    };
+    const rows = [
+      { id: "type-1", name: "학교생활", color: "#00AFAE", sort_order: 10 },
+      { id: "type-2", name: "교우관계", color: "#7C3AED", sort_order: 30 },
+    ];
+    const db = {
+      prepare: (sql: string) => {
+        const statement = {
+          bind: () => statement,
+          first: async () => membership,
+          all: async () => ({
+            results: sql.includes("counseling_types") ? rows : [],
+          }),
+        };
+        return statement;
+      },
+    };
+    const response = await worker.fetch(
+      new Request("https://example.com/api/v1/counseling-types", {
+        headers: {
+          "Cf-Access-Authenticated-User-Email": "teacher@example.com",
+        },
+      }),
+      { ...createEnv(), DB: db } as unknown as Env,
+    );
+    const body = (await response.json()) as { data: typeof rows };
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual(rows);
   });
 });
 

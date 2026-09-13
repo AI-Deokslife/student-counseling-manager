@@ -58,3 +58,16 @@ Preview와 Production은 서로 다른 D1 binding을 사용합니다. 운영 mig
 - 데이터 무결성 검사와 복원 전 서버 스냅샷
 
 API 응답에는 `X-Request-Id`와 보안 헤더가 포함되며, 민감 데이터는 로그에 기록하지 않습니다.
+
+## 데이터 환경 구분
+
+- `npm run db:migrate:local`, `npm run db:seed:local`, `npx wrangler dev`: `.wrangler` 아래의 로컬 D1을 사용합니다.
+- Preview 배포: `student-counseling-preview` D1을 사용합니다.
+- Production 배포: `student-counseling-prod` D1을 사용합니다.
+- 대시보드 연결 상태에서 현재 환경을 `로컬 개발 DB`, `미리보기 DB`, `클라우드 운영 DB`로 확인할 수 있습니다.
+
+현재 로컬 개발 서버는 네트워크 없이 로컬 D1로 실행할 수 있습니다. PRD의 IndexedDB 기반 완전 오프라인 Local Edition은 별도 Phase 6 범위이며, 현재 구현은 Cloud Worker API와 로컬 D1 개발 환경입니다.
+
+## 개인정보 표시 원칙
+
+학생 목록, 상담, 일정, 검색 결과, 휴지통, 화면 내보내기에서는 이름을 `박O호` 형식으로 마스킹합니다. 학생 선택지는 `2학년 3반 6번 · 박O호`처럼 학적정보를 먼저 표시합니다. 원본 이름은 권한이 있는 교사가 학생 상세 편집 화면을 명시적으로 연 경우에만 표시합니다.

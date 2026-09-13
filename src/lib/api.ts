@@ -7,6 +7,7 @@ const healthResponseSchema = z.object({
     status: z.literal("ok"),
     appVersion: z.string(),
     database: z.enum(["ok", "unavailable"]),
+    environment: z.enum(["local", "preview", "production"]),
   }),
   meta: responseMetaSchema,
 });
@@ -46,6 +47,9 @@ export interface CounselingSummary {
   id: string;
   student_id: string;
   student_name: string;
+  counseling_type_id: string | null;
+  counseling_type_name: string | null;
+  counseling_type_color: string | null;
   counseling_date: string;
   summary: string;
   content: string;
@@ -53,6 +57,13 @@ export interface CounselingSummary {
   follow_up_date: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CounselingType {
+  id: string;
+  name: string;
+  color: string | null;
+  sort_order: number;
 }
 
 export interface DashboardStats {
@@ -234,6 +245,7 @@ export const api = {
   },
   createCounseling: async (input: {
     studentId: string;
+    counselingTypeId: string;
     date: string;
     summary: string;
     content: string;
@@ -257,10 +269,18 @@ export const api = {
     if (!response.ok) throw new Error("상담 기록을 불러오지 못했습니다.");
     return ((await response.json()) as { data: CounselingSummary[] }).data;
   },
+  counselingTypes: async (): Promise<CounselingType[]> => {
+    const response = await fetch("/api/v1/counseling-types", {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error("상담 유형을 불러오지 못했습니다.");
+    return ((await response.json()) as { data: CounselingType[] }).data;
+  },
   updateCounseling: async (
     id: string,
     input: {
       summary: string;
+      counselingTypeId: string;
       content: string;
       status: string;
       followUpDate: string | null;

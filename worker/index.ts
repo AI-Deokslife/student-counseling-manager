@@ -81,12 +81,30 @@ async function handleApi(
           status: "ok",
           appVersion: env.APP_VERSION ?? "0.1.0",
           database,
+          environment: env.APP_ENV,
         },
         meta: { requestId },
       },
       requestId,
       database === "ok" ? 200 : 503,
     );
+  }
+
+  if (pathname === "/api/v1/counseling-types" && request.method === "GET") {
+    const user = await authenticate(request, env);
+    if (!user)
+      return errorResponse(
+        "UNAUTHENTICATED",
+        "로그인이 필요합니다.",
+        requestId,
+        401,
+      );
+    const rows = await env.DB.prepare(
+      "SELECT id, name, color, sort_order FROM counseling_types WHERE workspace_id = ? AND is_active = 1 ORDER BY sort_order, name",
+    )
+      .bind(user.workspace.id)
+      .all();
+    return json({ data: rows.results, meta: { requestId } }, requestId);
   }
 
   if (request.method === "POST" && pathname === "/api/v1/auth/login") {
@@ -226,7 +244,8 @@ async function handleApi(
         LEFT JOIN student_enrollments ON student_enrollments.student_id = students.id
           AND student_enrollments.school_year = 2026
         WHERE students.workspace_id = ? AND students.deleted_at IS NULL
-        ORDER BY students.name ASC
+        ORDER BY student_enrollments.grade ASC, student_enrollments.class_no ASC,
+          student_enrollments.student_no ASC, students.name ASC
         LIMIT 100
       `,
       )
@@ -618,11 +637,14 @@ async function handleApi(
       const rows = await env.DB.prepare(
         `
         SELECT counseling_records.id, counseling_records.student_id, students.name AS student_name,
+          counseling_records.counseling_type_id, counseling_types.name AS counseling_type_name,
+          counseling_types.color AS counseling_type_color,
           counseling_records.counseling_date, counseling_records.summary,
           counseling_records.content, counseling_records.status, counseling_records.follow_up_date,
           counseling_records.created_at, counseling_records.updated_at
         FROM counseling_records
         INNER JOIN students ON students.id = counseling_records.student_id
+        LEFT JOIN counseling_types ON counseling_types.id = counseling_records.counseling_type_id
         WHERE counseling_records.workspace_id = ? AND counseling_records.deleted_at IS NULL
         ORDER BY counseling_records.counseling_date DESC, counseling_records.created_at DESC
         LIMIT 100
@@ -652,6 +674,8 @@ async function handleApi(
       );
     const body = await parseObject(request);
     const studentId = typeof body?.studentId === "string" ? body.studentId : "";
+    const counselingTypeId =
+      typeof body?.counselingTypeId === "string" ? body.counselingTypeId : "";
     const summary =
       typeof body?.summary === "string" ? body.summary.trim() : "";
     const date = typeof body?.date === "string" ? body.date : "";
@@ -673,6 +697,7 @@ async function handleApi(
     ];
     if (
       !/^[0-9a-f-]{36}$/i.test(studentId) ||
+      !/^[0-9a-f-]{36}$/i.test(counselingTypeId) ||
       !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       !summary ||
       summary.length > 500 ||
@@ -699,16 +724,30 @@ async function handleApi(
         404,
       );
 
+    const counselingType = await env.DB.prepare(
+      "SELECT id FROM counseling_types WHERE id = ? AND workspace_id = ? AND is_active = 1",
+    )
+      .bind(counselingTypeId, user.workspace.id)
+      .first();
+    if (!counselingType)
+      return errorResponse(
+        "VALIDATION_ERROR",
+        "상담 유형을 확인해 주세요.",
+        requestId,
+        400,
+      );
+
     const id = crypto.randomUUID();
     const auditId = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO counseling_records (id, workspace_id, student_id, counseling_date, summary, content, status, follow_up_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO counseling_records (id, workspace_id, student_id, counseling_type_id, counseling_date, summary, content, status, follow_up_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         id,
         user.workspace.id,
         studentId,
+        counselingTypeId,
         date,
         summary,
         content,
@@ -777,7 +816,7 @@ async function handleApi(
       );
     }
     const current = await env.DB.prepare(
-      `SELECT counseling_records.*, students.name AS student_name FROM counseling_records INNER JOIN students ON students.id = counseling_records.student_id WHERE counseling_records.id = ? AND counseling_records.workspace_id = ?`,
+      `SELECT counseling_records.*, students.name AS student_name, counseling_types.name AS counseling_type_name, counseling_types.color AS counseling_type_color FROM counseling_records INNER JOIN students ON students.id = counseling_records.student_id LEFT JOIN counseling_types ON counseling_types.id = counseling_records.counseling_type_id WHERE counseling_records.id = ? AND counseling_records.workspace_id = ?`,
     )
       .bind(recordId, user.workspace.id)
       .first<Record<string, unknown>>();
@@ -806,6 +845,10 @@ async function handleApi(
         typeof body.summary === "string"
           ? body.summary.trim()
           : String(current.summary ?? "");
+      const counselingTypeId =
+        typeof body.counselingTypeId === "string"
+          ? body.counselingTypeId
+          : String(current.counseling_type_id ?? "");
       const content =
         typeof body.content === "string"
           ? body.content.trim()
@@ -818,6 +861,7 @@ async function handleApi(
           : current.follow_up_date;
       if (
         !summary ||
+        !/^[0-9a-f-]{36}$/i.test(counselingTypeId) ||
         summary.length > 500 ||
         content.length > 50_000 ||
         ![
@@ -834,11 +878,24 @@ async function handleApi(
           requestId,
           400,
         );
+      const counselingType = await env.DB.prepare(
+        "SELECT id FROM counseling_types WHERE id = ? AND workspace_id = ? AND is_active = 1",
+      )
+        .bind(counselingTypeId, user.workspace.id)
+        .first();
+      if (!counselingType)
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "상담 유형을 확인해 주세요.",
+          requestId,
+          400,
+        );
       const now = new Date().toISOString();
       await env.DB.batch([
         env.DB.prepare(
-          "UPDATE counseling_records SET summary = ?, content = ?, status = ?, follow_up_date = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND updated_at = ?",
+          "UPDATE counseling_records SET counseling_type_id = ?, summary = ?, content = ?, status = ?, follow_up_date = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND updated_at = ?",
         ).bind(
+          counselingTypeId,
           summary,
           content,
           status,
@@ -1145,14 +1202,31 @@ async function handleApi(
           requestId,
           400,
         );
+      const fallbackType = await env.DB.prepare(
+        "SELECT id FROM counseling_types WHERE workspace_id = ? AND is_active = 1 ORDER BY sort_order LIMIT 1",
+      )
+        .bind(user.workspace.id)
+        .first<{ id: string }>();
+      const counselingTypeId =
+        typeof current.counseling_type_id === "string"
+          ? current.counseling_type_id
+          : fallbackType?.id;
+      if (!counselingTypeId)
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "사용 가능한 상담 유형이 없습니다.",
+          requestId,
+          400,
+        );
       const recordId = crypto.randomUUID();
       await env.DB.batch([
         env.DB.prepare(
-          "INSERT INTO counseling_records (id, workspace_id, student_id, counseling_date, counseling_time, summary, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO counseling_records (id, workspace_id, student_id, counseling_type_id, counseling_date, counseling_time, summary, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ).bind(
           recordId,
           user.workspace.id,
           current.student_id,
+          counselingTypeId,
           current.scheduled_date,
           current.scheduled_time,
           summary,

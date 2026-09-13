@@ -954,6 +954,7 @@ db.version(1).stores({
 |---|---|---|
 | GET | `/api/v1/health` | 상태 확인 |
 | GET | `/api/v1/me` | 사용자 정보 |
+| GET | `/api/v1/counseling-types` | 활성 상담 유형 목록 |
 | GET | `/api/v1/bootstrap` | 초기 설정/유형/태그 |
 | GET | `/api/v1/students` | 학생 목록 |
 | POST | `/api/v1/students` | 학생 등록 |

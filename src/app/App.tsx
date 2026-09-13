@@ -39,6 +39,7 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import { usePwa } from "../hooks/usePwa";
 import { api } from "../lib/api";
 import type { CurrentUser } from "../lib/api";
+import { maskStudentName, studentLabel } from "../lib/privacy";
 import { parseStudentSheet } from "../lib/studentImport";
 import type { ParsedStudentRow } from "../lib/studentImport";
 
@@ -159,7 +160,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <main className="grid min-h-[100dvh] bg-white lg:grid-cols-[minmax(0,1fr)_460px]">
-      <div className="flex min-h-[34dvh] items-center justify-center overflow-hidden bg-[#08c8c1] lg:min-h-[100dvh]">
+      <div className="flex min-h-[34dvh] items-center justify-center overflow-hidden bg-[#00D2D1] lg:min-h-[100dvh]">
         <img
           src="/access-hero.png"
           alt="학생과 교사가 밝게 상담하는 마음잇기 소개 이미지"
@@ -420,7 +421,7 @@ function Dashboard({
                   </time>
                   <div>
                     <p className="text-sm font-extrabold">
-                      {item.student_name}
+                      {maskStudentName(item.student_name)}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
                       {item.note || "상담 일정"}
@@ -455,7 +456,7 @@ function Dashboard({
                 <li key={item.id} className="px-5 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-extrabold">
-                      {item.student_name}
+                      {maskStudentName(item.student_name)}
                     </p>
                     <time className="text-xs font-bold text-rose-600">
                       {item.follow_up_date}
@@ -485,7 +486,7 @@ function Dashboard({
                 {health.isPending
                   ? "연결 상태를 확인하고 있어요."
                   : health.isSuccess
-                    ? `API v${health.data.appVersion} · 데이터베이스 ${health.data.database === "ok" ? "정상" : "확인 필요"}`
+                    ? `${health.data.environment === "local" ? "로컬 개발 DB" : health.data.environment === "preview" ? "미리보기 DB" : "클라우드 운영 DB"} · API v${health.data.appVersion}`
                     : "개발 서버가 아직 연결되지 않았어요."}
               </p>
             </div>
@@ -575,7 +576,20 @@ function CounselingPage({
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-extrabold">{record.student_name}</p>
+                    <p className="font-extrabold">
+                      {maskStudentName(record.student_name)}
+                    </p>
+                    {record.counseling_type_name && (
+                      <span
+                        className="rounded-full px-2 py-1 text-[11px] font-extrabold"
+                        style={{
+                          color: record.counseling_type_color ?? "#4B5563",
+                          backgroundColor: `${record.counseling_type_color ?? "#4B5563"}14`,
+                        }}
+                      >
+                        {record.counseling_type_name}
+                      </span>
+                    )}
                     <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-600">
                       {statusLabels[record.status] ?? record.status}
                     </span>
@@ -622,13 +636,25 @@ function CounselingEditor({
   saved: () => Promise<void>;
 }) {
   const [summary, setSummary] = useState(record.summary);
+  const [counselingTypeId, setCounselingTypeId] = useState(
+    record.counseling_type_id ?? "",
+  );
   const [content, setContent] = useState(record.content ?? "");
   const [status, setStatus] = useState(record.status);
   const [followUpDate, setFollowUpDate] = useState(record.follow_up_date ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const counselingTypes = useQuery({
+    queryKey: ["counseling-types"],
+    queryFn: api.counselingTypes,
+  });
+  useEffect(() => {
+    if (!counselingTypeId && counselingTypes.data?.[0])
+      setCounselingTypeId(counselingTypes.data[0].id);
+  }, [counselingTypeId, counselingTypes.data]);
   const update = useMutation({
     mutationFn: () =>
       api.updateCounseling(record.id, {
+        counselingTypeId,
         summary,
         content,
         status,
@@ -651,7 +677,7 @@ function CounselingEditor({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-extrabold text-mint-700">
-              {record.student_name} · {record.counseling_date}
+              {maskStudentName(record.student_name)} · {record.counseling_date}
             </p>
             <h2 className="mt-1 text-xl font-extrabold">상담 기록 수정</h2>
           </div>
@@ -670,6 +696,22 @@ function CounselingEditor({
           }}
           className="mt-6 space-y-4"
         >
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold">상담 유형</span>
+            <select
+              required
+              value={counselingTypeId}
+              onChange={(event) => setCounselingTypeId(event.target.value)}
+              className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+            >
+              <option value="">유형 선택</option>
+              {counselingTypes.data?.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="block">
             <span className="mb-2 block text-sm font-bold">한줄 기록</span>
             <input
@@ -926,17 +968,16 @@ function StudentPage() {
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-mint-50 font-extrabold text-mint-700">
-                    {student.name.slice(0, 1)}
+                    <UserRound size={18} />
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-extrabold">
                       {student.is_favorite ? "★ " : ""}
-                      {student.name}
+                      {studentLabel(student)}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-500">
-                      {student.grade
-                        ? `${student.grade}학년 ${student.class_no ?? "-"}반 ${student.student_no ?? "-"}번`
-                        : "학적 미입력"}
+                      {student.school_year ?? 2026}학년도 ·{" "}
+                      {student.status === "active" ? "재학" : student.status}
                     </p>
                   </div>
                 </div>
@@ -1091,7 +1132,9 @@ function StudentExcelImport({
                       <td className="px-3 py-2 text-gray-400">
                         {row.sourceRow}
                       </td>
-                      <td className="px-3 py-2 font-bold">{row.name}</td>
+                      <td className="px-3 py-2 font-bold">
+                        {maskStudentName(row.name)}
+                      </td>
                       <td className="px-3 py-2">{row.grade}</td>
                       <td className="px-3 py-2">{row.classNo}</td>
                       <td className="px-3 py-2">{row.studentNo}</td>
@@ -1213,7 +1256,9 @@ function StudentEditor({
                 ? `${student.grade}학년 ${student.class_no ?? "-"}반 ${student.student_no ?? "-"}번`
                 : "학적 미입력"}
             </p>
-            <h2 className="mt-1 text-xl font-extrabold">{student.name} 학생</h2>
+            <h2 className="mt-1 text-xl font-extrabold">
+              {studentLabel(student)}
+            </h2>
           </div>
           <button
             onClick={close}
@@ -1366,16 +1411,26 @@ function StudentEditor({
 function QuickCounseling({ close }: { close: () => void }) {
   const queryClient = useQueryClient();
   const students = useQuery({ queryKey: ["students"], queryFn: api.students });
+  const counselingTypes = useQuery({
+    queryKey: ["counseling-types"],
+    queryFn: api.counselingTypes,
+  });
   const [studentId, setStudentId] = useState("");
+  const [counselingTypeId, setCounselingTypeId] = useState("");
   const [date, setDate] = useState(new Date().toLocaleDateString("en-CA"));
   const [summary, setSummary] = useState("");
   const [content, setContent] = useState("");
   const [status, setStatus] = useState("normal");
   const [followUpDate, setFollowUpDate] = useState("");
+  useEffect(() => {
+    if (!counselingTypeId && counselingTypes.data?.[0])
+      setCounselingTypeId(counselingTypes.data[0].id);
+  }, [counselingTypeId, counselingTypes.data]);
   const create = useMutation({
     mutationFn: () =>
       api.createCounseling({
         studentId,
+        counselingTypeId,
         date,
         summary,
         content,
@@ -1429,10 +1484,23 @@ function QuickCounseling({ close }: { close: () => void }) {
               <option value="">학생 선택</option>
               {students.data?.map((student) => (
                 <option key={student.id} value={student.id}>
-                  {student.name}{" "}
-                  {student.grade
-                    ? `· ${student.grade}학년 ${student.class_no ?? "-"}반`
-                    : ""}
+                  {studentLabel(student)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold">상담 유형</span>
+            <select
+              required
+              value={counselingTypeId}
+              onChange={(event) => setCounselingTypeId(event.target.value)}
+              className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+            >
+              <option value="">유형 선택</option>
+              {counselingTypes.data?.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
                 </option>
               ))}
             </select>
@@ -1610,7 +1678,7 @@ function CalendarPage() {
                 <option value="">학생 선택</option>
                 {students.data?.map((student) => (
                   <option key={student.id} value={student.id}>
-                    {student.name}
+                    {studentLabel(student)}
                   </option>
                 ))}
               </select>
@@ -1717,7 +1785,8 @@ function CalendarPage() {
                       key={item.id}
                       className="block truncate rounded-sm bg-sky-50 px-1 py-0.5 text-[9px] font-bold text-sky-700 sm:text-[11px]"
                     >
-                      {item.scheduled_time ?? ""} {item.student_name}
+                      {item.scheduled_time ?? ""}{" "}
+                      {maskStudentName(item.student_name)}
                     </span>
                   ))}
                   {daySchedules.length > 2 && (
@@ -1776,7 +1845,9 @@ function CalendarPage() {
                 </time>
                 <div className="min-w-0 flex-1 border-l border-gray-200 pl-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-extrabold">{item.student_name}</p>
+                    <p className="font-extrabold">
+                      {maskStudentName(item.student_name)}
+                    </p>
                     <span className="rounded-full bg-mint-50 px-2 py-1 text-[11px] font-bold text-mint-700">
                       {item.status === "scheduled"
                         ? "예정"
@@ -1823,7 +1894,7 @@ function ScheduleEditor({
   const [time, setTime] = useState(schedule.scheduled_time ?? "");
   const [note, setNote] = useState(schedule.note ?? "");
   const [summary, setSummary] = useState(
-    schedule.note || `${schedule.student_name} 상담`,
+    schedule.note || `${maskStudentName(schedule.student_name)} 상담`,
   );
   const [content, setContent] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -1857,7 +1928,7 @@ function ScheduleEditor({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-extrabold text-mint-700">
-              {schedule.student_name}
+              {maskStudentName(schedule.student_name)}
             </p>
             <h2 className="mt-1 text-xl font-extrabold">일정 관리</h2>
           </div>
@@ -1994,7 +2065,7 @@ function ReportsPage() {
       ["상담일", "학생", "상태", "한줄 기록", "상세 내용", "후속상담일"],
       ...(results.data ?? []).map((item) => [
         item.counseling_date,
-        item.student_name,
+        maskStudentName(item.student_name),
         statusLabels[item.status] ?? item.status,
         item.summary,
         item.content,
@@ -2095,7 +2166,9 @@ function ReportsPage() {
             {results.data?.map((item) => (
               <li key={item.id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-extrabold">{item.student_name}</p>
+                  <p className="font-extrabold">
+                    {maskStudentName(item.student_name)}
+                  </p>
                   <time className="text-xs font-bold text-gray-500">
                     {item.counseling_date}
                   </time>
@@ -2228,7 +2301,9 @@ function SettingsCore() {
               className="flex items-center justify-between gap-3 px-5 py-4"
             >
               <div>
-                <p className="text-sm font-extrabold">{item.name}</p>
+                <p className="text-sm font-extrabold">
+                  {maskStudentName(item.name)}
+                </p>
                 <p className="mt-1 text-xs text-gray-500">
                   삭제된 학생 · {item.deleted_at.slice(0, 10)}
                 </p>
@@ -2249,7 +2324,7 @@ function SettingsCore() {
             >
               <div>
                 <p className="text-sm font-extrabold">
-                  {item.student_name} 상담
+                  {maskStudentName(item.student_name)} 상담
                 </p>
                 <p className="mt-1 line-clamp-1 text-xs text-gray-500">
                   {item.summary}
