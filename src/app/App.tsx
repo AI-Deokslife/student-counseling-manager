@@ -37,9 +37,18 @@ import {
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { usePwa } from "../hooks/usePwa";
-import { api } from "../lib/api";
-import type { CurrentUser } from "../lib/api";
+import {
+  api,
+  downloadCloudBackup,
+  getAppMode,
+  purgeCloudData,
+  setAppMode,
+  uploadBackupToCloud,
+} from "../lib/api";
+import type { AppMode, CurrentUser } from "../lib/api";
+import { importLocalBackup, localBackup } from "../lib/localDb";
 import { maskStudentName, studentLabel } from "../lib/privacy";
+import { downloadStudentCounselingExcel } from "../lib/studentCounselingExport";
 import { parseStudentSheet } from "../lib/studentImport";
 import type { ParsedStudentRow } from "../lib/studentImport";
 
@@ -1378,9 +1387,25 @@ function StudentEditor({
         <section className="mt-6 border-t border-gray-200 pt-5">
           <div className="flex items-center justify-between">
             <h3 className="font-extrabold">누적 상담 타임라인</h3>
-            <span className="text-xs font-bold text-gray-500">
-              {timeline.data?.length ?? 0}건
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-500">
+                {timeline.data?.length ?? 0}건
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  void downloadStudentCounselingExcel(
+                    student,
+                    timeline.data ?? [],
+                  )
+                }
+                disabled={!timeline.data?.length}
+                className="grid size-9 place-items-center rounded-md text-mint-700 hover:bg-mint-50 disabled:opacity-40"
+                title="학생 상담 기록 Excel 다운로드"
+              >
+                <FileSpreadsheet size={17} />
+              </button>
+            </div>
           </div>
           <ol className="mt-4 space-y-3">
             {timeline.data?.map((record) => (
@@ -2443,9 +2468,179 @@ function RestorePanel() {
   );
 }
 
-function SettingsPage() {
+function saveDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+function DataModePanel({
+  mode,
+  changed,
+}: {
+  mode: AppMode;
+  changed: (mode: AppMode) => void;
+}) {
+  const [cloudExportId, setCloudExportId] = useState("");
+  const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const cloudToLocal = useMutation({
+    mutationFn: async () => {
+      const bundle = await downloadCloudBackup();
+      saveDownload(
+        bundle.blob,
+        `마음잇기_클라우드_백업_${new Date().toLocaleDateString("en-CA")}.json`,
+      );
+      await importLocalBackup(bundle.backup);
+      return bundle.exportId;
+    },
+    onSuccess: (exportId) => {
+      setCloudExportId(exportId);
+      setBackupConfirmed(false);
+    },
+  });
+  const purge = useMutation({
+    mutationFn: () => purgeCloudData(cloudExportId),
+    onSuccess: () => changed("local"),
+  });
+  const localToCloud = useMutation({
+    mutationFn: async () => uploadBackupToCloud(await localBackup()),
+    onSuccess: () => changed("cloud"),
+  });
+  const downloadLocal = useMutation({
+    mutationFn: async () => {
+      const backup = await localBackup();
+      saveDownload(
+        new Blob([JSON.stringify(backup, null, 2)], {
+          type: "application/json",
+        }),
+        `마음잇기_로컬_백업_${new Date().toLocaleDateString("en-CA")}.json`,
+      );
+    },
+  });
+
+  return (
+    <section className="mx-auto w-full max-w-[1000px] px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-panel">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-mint-50 text-mint-700">
+              <Database size={20} />
+            </span>
+            <div>
+              <p className="text-sm font-extrabold text-mint-700">
+                데이터 저장 위치
+              </p>
+              <h2 className="font-extrabold">
+                {mode === "cloud"
+                  ? "DB 모드 · 클라우드 D1"
+                  : "로컬 모드 · 이 기기 IndexedDB"}
+              </h2>
+            </div>
+          </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-extrabold text-gray-700">
+            {mode === "cloud" ? "온라인" : "오프라인 가능"}
+          </span>
+        </div>
+        {mode === "cloud" ? (
+          <div className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <h3 className="font-extrabold">클라우드 자료를 로컬로 옮기기</h3>
+              <p className="mt-1 text-sm leading-6 text-gray-500">
+                백업 파일을 먼저 내려받고 이 기기의 로컬 DB에 복사합니다.
+              </p>
+              {cloudToLocal.isSuccess && (
+                <label className="mt-4 flex items-center gap-2 text-sm font-bold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={backupConfirmed}
+                    onChange={(event) =>
+                      setBackupConfirmed(event.target.checked)
+                    }
+                    className="size-4 accent-mint-600"
+                  />
+                  다운로드한 백업 파일을 별도 보관했습니다
+                </label>
+              )}
+              {(cloudToLocal.isError || purge.isError) && (
+                <p className="mt-3 text-sm font-semibold text-rose-600">
+                  {cloudToLocal.error?.message ?? purge.error?.message}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => cloudToLocal.mutate()}
+                disabled={cloudToLocal.isPending || purge.isPending}
+                className="flex h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                <Download size={16} />
+                {cloudToLocal.isPending ? "백업 중" : "백업 후 로컬 저장"}
+              </button>
+              <button
+                onClick={() => purge.mutate()}
+                disabled={!cloudExportId || !backupConfirmed || purge.isPending}
+                className="flex h-10 items-center gap-2 rounded-md bg-rose-600 px-4 text-sm font-extrabold text-white disabled:opacity-40"
+              >
+                <Trash2 size={16} />
+                {purge.isPending
+                  ? "삭제 중"
+                  : "클라우드 자료 삭제 후 로컬 모드"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <h3 className="font-extrabold">로컬 자료를 DB 모드로 업로드</h3>
+              <p className="mt-1 text-sm leading-6 text-gray-500">
+                이 기기의 자료를 클라우드 DB에 안전하게 병합합니다. 로컬 자료는
+                그대로 남습니다.
+              </p>
+              {(localToCloud.isError || downloadLocal.isError) && (
+                <p className="mt-3 text-sm font-semibold text-rose-600">
+                  {localToCloud.error?.message ?? downloadLocal.error?.message}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => downloadLocal.mutate()}
+                disabled={downloadLocal.isPending}
+                className="flex h-10 items-center gap-2 rounded-md border border-gray-300 px-4 text-sm font-extrabold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Download size={16} /> 로컬 백업
+              </button>
+              <button
+                onClick={() => localToCloud.mutate()}
+                disabled={localToCloud.isPending}
+                className="flex h-10 items-center gap-2 rounded-md bg-mint-600 px-4 text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                <Upload size={16} />
+                {localToCloud.isPending ? "업로드 중" : "DB 모드로 업로드"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SettingsPage({
+  mode,
+  changed,
+}: {
+  mode: AppMode;
+  changed: (mode: AppMode) => void;
+}) {
   return (
     <>
+      <DataModePanel mode={mode} changed={changed} />
       <SettingsCore />
       <RestorePanel />
     </>
@@ -2455,9 +2650,21 @@ function SettingsPage() {
 export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [appMode, setCurrentAppMode] = useState<AppMode>(getAppMode);
   const queryClient = useQueryClient();
+  const changeMode = (mode: AppMode) => {
+    setAppMode(mode);
+    queryClient.clear();
+    setCurrentAppMode(mode);
+  };
+  useEffect(() => {
+    const syncMode = () => setCurrentAppMode(getAppMode());
+    window.addEventListener("student-counseling-mode-change", syncMode);
+    return () =>
+      window.removeEventListener("student-counseling-mode-change", syncMode);
+  }, []);
   const currentUser = useQuery({
-    queryKey: ["me"],
+    queryKey: ["me", appMode],
     queryFn: api.me,
     retry: false,
   });
@@ -2523,7 +2730,10 @@ export function App() {
             />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/settings"
+              element={<SettingsPage mode={appMode} changed={changeMode} />}
+            />
           </Routes>
         </main>
         <nav

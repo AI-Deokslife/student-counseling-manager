@@ -211,6 +211,7 @@ describe("GET /api/v1/backup/export", () => {
       bind: () => statement,
       first: async () => membership,
       all: async () => ({ results: [] }),
+      run: async () => ({ success: true }),
     };
     const env = {
       ...createEnv(),
@@ -228,7 +229,38 @@ describe("GET /api/v1/backup/export", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("attachment");
+    expect(response.headers.get("x-backup-export-id")).toMatch(
+      /^[0-9a-f-]{36}$/i,
+    );
     expect(body.format).toBe("student-counseling-backup");
     expect(body.data.students).toEqual([]);
+  });
+});
+
+describe("POST /api/v1/mode/purge-cloud", () => {
+  it("rejects a cloud purge without a completed transfer backup confirmation", async () => {
+    const membership = {
+      email: "owner@example.com",
+      display_name: "관리자",
+      role: "owner",
+      workspace_id: "1429c877-c06c-498d-a28e-296610483a4a",
+      workspace_name: "마음잇기",
+    };
+    const statement = { bind: () => statement, first: async () => membership };
+    const response = await worker.fetch(
+      new Request("https://example.com/api/v1/mode/purge-cloud", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cf-Access-Authenticated-User-Email": "owner@example.com",
+        },
+        body: JSON.stringify({}),
+      }),
+      { ...createEnv(), DB: { prepare: () => statement } } as unknown as Env,
+    );
+    const body = (await response.json()) as { error: { code: string } };
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe("CONFIRMATION_REQUIRED");
   });
 });

@@ -1,4 +1,18 @@
 import { z } from "zod";
+import { localApi } from "./localDb";
+
+export type AppMode = "cloud" | "local";
+
+const modeStorageKey = "student-counseling-data-mode";
+
+export function getAppMode(): AppMode {
+  return localStorage.getItem(modeStorageKey) === "local" ? "local" : "cloud";
+}
+
+export function setAppMode(mode: AppMode) {
+  localStorage.setItem(modeStorageKey, mode);
+  window.dispatchEvent(new Event("student-counseling-mode-change"));
+}
 
 const responseMetaSchema = z.object({ requestId: z.string().uuid() });
 
@@ -140,7 +154,7 @@ async function request<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   return schema.parse(await response.json());
 }
 
-export const api = {
+const remoteApi = {
   health: async () => (await request("/health", healthResponseSchema)).data,
   me: async () => (await request("/me", meResponseSchema)).data,
   login: async (username: string, password: string) => {
@@ -474,3 +488,37 @@ export const api = {
     ).data;
   },
 };
+
+export async function downloadCloudBackup() {
+  const response = await fetch("/api/v1/backup/export", {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error("클라우드 백업을 만들지 못했습니다.");
+  const exportId = response.headers.get("X-Backup-Export-Id");
+  if (!exportId) throw new Error("전환 백업 식별자를 확인하지 못했습니다.");
+  const blob = await response.blob();
+  return { blob, exportId, backup: JSON.parse(await blob.text()) as unknown };
+}
+
+export async function purgeCloudData(backupExportId: string) {
+  const response = await fetch("/api/v1/mode/purge-cloud", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      backupExportId,
+      confirm: "DELETE_AFTER_BACKUP",
+    }),
+  });
+  if (!response.ok) throw new Error("클라우드 데이터를 삭제하지 못했습니다.");
+}
+
+export async function uploadBackupToCloud(backup: unknown) {
+  return remoteApi.restoreBackup(backup);
+}
+
+export const api = new Proxy(remoteApi, {
+  get(target, property, receiver) {
+    const source = getAppMode() === "local" ? localApi : target;
+    return Reflect.get(source, property, receiver);
+  },
+}) as typeof remoteApi;

@@ -165,6 +165,15 @@ function createRepositories(mode: AppMode): Repositories {
 }
 ```
 
+모드 전환은 동기화 기능이 아니라 명시적 백업 이동이다.
+
+```text
+Cloud → Local: export snapshot → browser download → IndexedDB import → explicit cloud purge
+Local → Cloud: IndexedDB export → Worker backup restore → switch to cloud mode
+```
+
+Cloud purge endpoint는 전환용 export snapshot ID와 `DELETE_AFTER_BACKUP` 확인값을 모두 검증한다.
+
 ---
 
 ## 5. ID 정책

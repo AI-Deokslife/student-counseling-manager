@@ -1397,46 +1397,199 @@ async function handleApi(
         requestId,
         401,
       );
-    const [students, enrollments, counselingRecords, schedules] =
-      await Promise.all([
-        env.DB.prepare("SELECT * FROM students WHERE workspace_id = ?")
-          .bind(user.workspace.id)
-          .all(),
-        env.DB.prepare(
-          "SELECT * FROM student_enrollments WHERE workspace_id = ?",
-        )
-          .bind(user.workspace.id)
-          .all(),
-        env.DB.prepare(
-          "SELECT * FROM counseling_records WHERE workspace_id = ?",
-        )
-          .bind(user.workspace.id)
-          .all(),
-        env.DB.prepare("SELECT * FROM schedules WHERE workspace_id = ?")
-          .bind(user.workspace.id)
-          .all(),
-      ]);
-    const response = json(
-      {
-        format: "student-counseling-backup",
-        schemaVersion: 1,
-        exportedAt: new Date().toISOString(),
-        workspace: user.workspace,
-        data: {
-          students: students.results,
-          studentEnrollments: enrollments.results,
-          counselingRecords: counselingRecords.results,
-          schedules: schedules.results,
-        },
-        meta: { requestId },
+    const [
+      students,
+      enrollments,
+      counselingRecords,
+      counselingTypes,
+      schedules,
+    ] = await Promise.all([
+      env.DB.prepare("SELECT * FROM students WHERE workspace_id = ?")
+        .bind(user.workspace.id)
+        .all(),
+      env.DB.prepare("SELECT * FROM student_enrollments WHERE workspace_id = ?")
+        .bind(user.workspace.id)
+        .all(),
+      env.DB.prepare("SELECT * FROM counseling_records WHERE workspace_id = ?")
+        .bind(user.workspace.id)
+        .all(),
+      env.DB.prepare("SELECT * FROM counseling_types WHERE workspace_id = ?")
+        .bind(user.workspace.id)
+        .all(),
+      env.DB.prepare("SELECT * FROM schedules WHERE workspace_id = ?")
+        .bind(user.workspace.id)
+        .all(),
+    ]);
+    const exportedAt = new Date().toISOString();
+    const snapshotId = crypto.randomUUID();
+    const backup = {
+      format: "student-counseling-backup",
+      schemaVersion: 1,
+      exportedAt,
+      workspace: user.workspace,
+      data: {
+        students: students.results,
+        studentEnrollments: enrollments.results,
+        counselingTypes: counselingTypes.results,
+        counselingRecords: counselingRecords.results,
+        schedules: schedules.results,
       },
-      requestId,
-    );
+    };
+    await env.DB.prepare(
+      "INSERT INTO backup_snapshots (id, workspace_id, reason, backup_json, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(
+        snapshotId,
+        user.workspace.id,
+        "cloud_to_local_export",
+        JSON.stringify(backup),
+        exportedAt,
+      )
+      .run();
+    const response = json({ ...backup, meta: { requestId } }, requestId);
+    response.headers.set("X-Backup-Export-Id", snapshotId);
     response.headers.set(
       "Content-Disposition",
       `attachment; filename="counseling-backup-${new Date().toISOString().slice(0, 10)}.json"`,
     );
     return response;
+  }
+
+  if (pathname === "/api/v1/mode/purge-cloud" && request.method === "POST") {
+    const user = await authenticate(request, env);
+    if (!user)
+      return errorResponse(
+        "UNAUTHENTICATED",
+        "로그인이 필요합니다.",
+        requestId,
+        401,
+      );
+    if (!["owner", "admin"].includes(user.role))
+      return errorResponse(
+        "FORBIDDEN",
+        "데이터 삭제 권한이 없습니다.",
+        requestId,
+        403,
+      );
+    const body = await parseObject(request);
+    const backupExportId =
+      typeof body?.backupExportId === "string" ? body.backupExportId : "";
+    if (
+      body?.confirm !== "DELETE_AFTER_BACKUP" ||
+      !/^[0-9a-f-]{36}$/i.test(backupExportId)
+    )
+      return errorResponse(
+        "CONFIRMATION_REQUIRED",
+        "백업 확인 후에만 클라우드 데이터를 삭제할 수 있습니다.",
+        requestId,
+        400,
+      );
+    const snapshot = await env.DB.prepare(
+      "SELECT id FROM backup_snapshots WHERE id = ? AND workspace_id = ? AND reason = ?",
+    )
+      .bind(backupExportId, user.workspace.id, "cloud_to_local_export")
+      .first();
+    if (!snapshot)
+      return errorResponse(
+        "BACKUP_REQUIRED",
+        "최근에 생성한 전환 백업을 먼저 다운로드해 주세요.",
+        requestId,
+        400,
+      );
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "DELETE FROM counseling_record_tags WHERE counseling_record_id IN (SELECT id FROM counseling_records WHERE workspace_id = ?)",
+      ).bind(user.workspace.id),
+      env.DB.prepare(
+        "DELETE FROM student_tags WHERE student_id IN (SELECT id FROM students WHERE workspace_id = ?)",
+      ).bind(user.workspace.id),
+      env.DB.prepare("DELETE FROM attachments WHERE workspace_id = ?").bind(
+        user.workspace.id,
+      ),
+      env.DB.prepare("DELETE FROM schedules WHERE workspace_id = ?").bind(
+        user.workspace.id,
+      ),
+      env.DB.prepare(
+        "DELETE FROM counseling_records WHERE workspace_id = ?",
+      ).bind(user.workspace.id),
+      env.DB.prepare(
+        "DELETE FROM student_enrollments WHERE workspace_id = ?",
+      ).bind(user.workspace.id),
+      env.DB.prepare("DELETE FROM students WHERE workspace_id = ?").bind(
+        user.workspace.id,
+      ),
+      env.DB.prepare("DELETE FROM tags WHERE workspace_id = ?").bind(
+        user.workspace.id,
+      ),
+      env.DB.prepare(
+        "DELETE FROM counseling_types WHERE workspace_id = ?",
+      ).bind(user.workspace.id),
+      env.DB.prepare(
+        "INSERT INTO counseling_types (id, workspace_id, name, color, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?), (?, ?, ?, ?, ?, 1, ?, ?), (?, ?, ?, ?, ?, 1, ?, ?), (?, ?, ?, ?, ?, 1, ?, ?), (?, ?, ?, ?, ?, 1, ?, ?), (?, ?, ?, ?, ?, 1, ?, ?)",
+      ).bind(
+        "00000000-0000-4000-8000-000000000101",
+        user.workspace.id,
+        "학교생활",
+        "#00AFAE",
+        10,
+        now,
+        now,
+        "00000000-0000-4000-8000-000000000102",
+        user.workspace.id,
+        "학업·진로",
+        "#2563EB",
+        20,
+        now,
+        now,
+        "00000000-0000-4000-8000-000000000103",
+        user.workspace.id,
+        "교우관계",
+        "#7C3AED",
+        30,
+        now,
+        now,
+        "00000000-0000-4000-8000-000000000104",
+        user.workspace.id,
+        "정서·생활",
+        "#E11D48",
+        40,
+        now,
+        now,
+        "00000000-0000-4000-8000-000000000105",
+        user.workspace.id,
+        "보호자 상담",
+        "#D97706",
+        50,
+        now,
+        now,
+        "00000000-0000-4000-8000-000000000106",
+        user.workspace.id,
+        "기타",
+        "#4B5563",
+        60,
+        now,
+        now,
+      ),
+      env.DB.prepare("DELETE FROM audit_logs WHERE workspace_id = ?").bind(
+        user.workspace.id,
+      ),
+      env.DB.prepare(
+        "DELETE FROM backup_snapshots WHERE workspace_id = ?",
+      ).bind(user.workspace.id),
+      env.DB.prepare(
+        "INSERT INTO audit_logs (id, workspace_id, entity_type, entity_id, action, after_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).bind(
+        crypto.randomUUID(),
+        user.workspace.id,
+        "workspace",
+        user.workspace.id,
+        "cloud_data_purged_after_local_backup",
+        JSON.stringify({ backupExportId }),
+        now,
+      ),
+    ]);
+    return json({ data: { purged: true }, meta: { requestId } }, requestId);
   }
 
   if (
@@ -1460,6 +1613,9 @@ async function handleApi(
     const enrollments = Array.isArray(data?.studentEnrollments)
       ? data.studentEnrollments.filter(isRecord)
       : null;
+    const counselingTypes = Array.isArray(data?.counselingTypes)
+      ? data.counselingTypes.filter(isRecord)
+      : [];
     const records = Array.isArray(data?.counselingRecords)
       ? data.counselingRecords.filter(isRecord)
       : null;
@@ -1490,6 +1646,7 @@ async function handleApi(
     const counts = {
       students: students.length,
       enrollments: enrollments.length,
+      counselingTypes: counselingTypes.length,
       counselingRecords: records.length,
       schedules: schedules.length,
     };
@@ -1526,6 +1683,17 @@ async function handleApi(
         .all(),
     ]);
     const now = new Date().toISOString();
+    const existingTypes = await env.DB.prepare(
+      "SELECT id, name FROM counseling_types WHERE workspace_id = ?",
+    )
+      .bind(user.workspace.id)
+      .all<{ id: string; name: string }>();
+    const typeIdBySourceId = new Map<string, string>();
+    const existingTypeByName = new Map(
+      existingTypes.results.map((type) => [type.name, type.id]),
+    );
+    for (const type of existingTypes.results)
+      typeIdBySourceId.set(type.id, type.id);
     const snapshot = JSON.stringify({
       format: "student-counseling-backup",
       schemaVersion: 1,
@@ -1549,6 +1717,31 @@ async function handleApi(
         now,
       ),
     ];
+    for (const type of counselingTypes) {
+      const sourceId = typeof type.id === "string" ? type.id : "";
+      const name = typeof type.name === "string" ? type.name.trim() : "";
+      if (!sourceId || !name) continue;
+      const existingId = existingTypeByName.get(name);
+      if (existingId) {
+        typeIdBySourceId.set(sourceId, existingId);
+        continue;
+      }
+      typeIdBySourceId.set(sourceId, sourceId);
+      statements.push(
+        env.DB.prepare(
+          "INSERT INTO counseling_types (id, workspace_id, name, color, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).bind(
+          sourceId,
+          user.workspace.id,
+          name,
+          typeof type.color === "string" ? type.color : null,
+          Number.isInteger(type.sort_order) ? type.sort_order : 999,
+          Number(type.is_active ?? 1),
+          typeof type.created_at === "string" ? type.created_at : now,
+          typeof type.updated_at === "string" ? type.updated_at : now,
+        ),
+      );
+    }
     for (const row of students)
       statements.push(
         env.DB.prepare(
@@ -1595,7 +1788,9 @@ async function handleApi(
           row.id,
           user.workspace.id,
           row.student_id,
-          row.counseling_type_id ?? null,
+          typeof row.counseling_type_id === "string"
+            ? (typeIdBySourceId.get(row.counseling_type_id) ?? null)
+            : null,
           row.counseling_date,
           row.counseling_time ?? null,
           row.summary ?? "",
@@ -1616,7 +1811,9 @@ async function handleApi(
           row.id,
           user.workspace.id,
           row.student_id,
-          row.counseling_type_id ?? null,
+          typeof row.counseling_type_id === "string"
+            ? (typeIdBySourceId.get(row.counseling_type_id) ?? null)
+            : null,
           row.scheduled_date,
           row.scheduled_time ?? null,
           row.note ?? "",
