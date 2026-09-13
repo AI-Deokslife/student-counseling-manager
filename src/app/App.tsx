@@ -337,6 +337,12 @@ function LoginScreen({
                 </button>
               </span>
             </label>
+            {mode === "local" && (
+              <p className="text-xs text-gray-400">
+                임시 비밀번호:{" "}
+                <span className="font-bold text-gray-500">1234</span>
+              </p>
+            )}
             {login.isError && (
               <p
                 role="alert"
