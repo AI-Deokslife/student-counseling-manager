@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "student-counseling-manager",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-13",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "student-counseling-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_ENV": "local",
+    "APP_VERSION": "0.1.0"
+  },
+  "env": {
+    "preview": {
+      "name": "student-counseling-manager-preview",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "student-counseling-preview",
+          "database_id": "c231bab5-b200-4b23-a42b-f052edb7fdd7",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": { "APP_ENV": "preview", "APP_VERSION": "0.1.0" }
+    },
+    "production": {
+      "name": "student-counseling-manager",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "student-counseling-prod",
+          "database_id": "864b5744-37f8-4d1f-a596-4f59bca24b0d",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": { "APP_ENV": "production", "APP_VERSION": "0.1.0" }
+    }
+  }
+}
