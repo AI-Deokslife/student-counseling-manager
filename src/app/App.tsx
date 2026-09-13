@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowUpDown,
   Bell,
+  BookOpen,
   CalendarPlus,
   CalendarDays,
   Check,
@@ -14,6 +16,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   HeartHandshake,
+  KeyRound,
   LayoutDashboard,
   LoaderCircle,
   LogIn,
@@ -34,7 +37,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { usePwa } from "../hooks/usePwa";
 import {
@@ -81,11 +84,13 @@ function Sidebar({
   close,
   user,
   logout,
+  openGuide,
 }: {
   open: boolean;
   close: () => void;
   user: CurrentUser;
   logout: () => void;
+  openGuide: () => void;
 }) {
   return (
     <>
@@ -125,6 +130,15 @@ function Sidebar({
           ))}
         </nav>
         <div className="mt-auto border-t border-gray-100 pt-4">
+          <button
+            onClick={() => {
+              openGuide();
+              close();
+            }}
+            className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-bold text-gray-600 hover:bg-gray-50"
+          >
+            <BookOpen size={19} /> 사용설명서
+          </button>
           <NavLink
             to="/settings"
             onClick={close}
@@ -158,12 +172,96 @@ function Sidebar({
   );
 }
 
-function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
+function UserGuide({ close }: { close: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="user-guide-title"
+    >
+      <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-lg bg-white sm:rounded-lg">
+        <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-5 py-4 sm:px-7">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-mint-50 text-mint-700">
+              <BookOpen size={20} />
+            </span>
+            <div>
+              <p className="text-xs font-extrabold text-mint-700">마음잇기</p>
+              <h2 id="user-guide-title" className="font-extrabold">
+                사용설명서
+              </h2>
+            </div>
+          </div>
+          <button
+            onClick={close}
+            className="grid size-10 place-items-center rounded-md text-gray-500 hover:bg-gray-100"
+            title="닫기"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="divide-y divide-gray-100 px-5 sm:px-7">
+          <section className="py-5">
+            <h3 className="font-extrabold">1. 학생 찾기와 등록</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              학생 메뉴에서 이름 또는 학번으로 찾습니다. 학번은 학년 1자리, 반 2자리, 번호 2자리 순서입니다. 예를 들어 1학년 3반 2번은 10302로 검색합니다.
+            </p>
+          </section>
+          <section className="py-5">
+            <h3 className="font-extrabold">2. 상담 기록</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              빠른 상담에서 학생과 상담 유형을 선택하고 한줄 기록을 저장합니다. 상세 내용과 후속상담일은 필요한 경우에만 입력하면 됩니다.
+            </p>
+          </section>
+          <section className="py-5">
+            <h3 className="font-extrabold">3. 후속상담과 일정</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              대시보드의 후속상담 목록은 아직 완료되지 않은 모든 후속 기록을 기한순으로 보여 줍니다. 일정 메뉴에서는 월간 달력과 목록으로 예정 상담을 관리합니다.
+            </p>
+          </section>
+          <section className="py-5">
+            <h3 className="font-extrabold">4. 여러 학생 정리</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              학생 목록의 체크박스로 여러 명을 선택한 뒤 휴지통으로 이동할 수 있습니다. 영구삭제가 아니므로 설정의 휴지통에서 복원할 수 있습니다.
+            </p>
+          </section>
+          <section className="py-5">
+            <h3 className="font-extrabold">5. 백업과 데이터 모드</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              설정에서 JSON 백업을 정기적으로 받아 두세요. 클라우드 자료를 로컬 모드로 옮길 때는 백업 다운로드와 확인이 끝난 뒤에만 클라우드 자료를 삭제할 수 있습니다.
+            </p>
+          </section>
+          <section className="py-5">
+            <h3 className="font-extrabold">6. 개인정보 보호</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              화면에는 학생 이름이 가려져 표시됩니다. 내보내기 자료와 백업 파일에는 상담 정보가 포함될 수 있으니 학교의 보관 기준에 따라 관리하세요.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({
+  onSuccess,
+  startLocal,
+  startCloud,
+  mode,
+  pwa,
+}: {
+  onSuccess: () => void;
+  startLocal: () => void;
+  startCloud: () => void;
+  mode: AppMode;
+  pwa: ReturnType<typeof usePwa>;
+}) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const login = useMutation({
-    mutationFn: () => api.login(username, password),
+    mutationFn: () => api.login(mode === "local" ? "local" : username, password),
     onSuccess,
   });
 
@@ -181,13 +279,15 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
           <Brand />
           <div className="mt-7">
             <div className="flex items-center gap-2 text-sm font-extrabold text-mint-700">
-              <ShieldCheck size={18} /> 관리자 전용
+              <ShieldCheck size={18} /> {mode === "local" ? "이 기기 로컬 모드" : "관리자 전용"}
             </div>
             <h1 className="mt-2 text-2xl font-extrabold text-ink">
-              상담 업무를 시작하세요
+              {mode === "local" ? "로컬 데이터를 잠금 해제하세요" : "상담 업무를 시작하세요"}
             </h1>
             <p className="mt-2 text-sm leading-6 text-gray-500">
-              안전하게 로그인하고 학생의 상담 기록을 관리하세요.
+              {mode === "local"
+                ? "이 기기에 저장된 상담 기록을 보려면 관리자 비밀번호를 입력하세요."
+                : "안전하게 로그인하고 학생의 상담 기록을 관리하세요."}
             </p>
           </div>
           <form
@@ -197,7 +297,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               login.mutate();
             }}
           >
-            <label className="block">
+            {mode === "cloud" && <label className="block">
               <span className="mb-2 block text-sm font-bold text-gray-700">
                 관리자 아이디
               </span>
@@ -210,7 +310,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
                 className="h-12 w-full rounded-md border border-gray-300 bg-white px-4 text-sm outline-none transition focus:border-mint-500 focus:ring-3 focus:ring-mint-100"
                 placeholder="아이디를 입력하세요"
               />
-            </label>
+            </label>}
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-gray-700">
                 비밀번호
@@ -222,7 +322,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
                   required
-                  minLength={8}
+                  minLength={mode === "local" ? 4 : 8}
                   maxLength={256}
                   className="h-12 w-full rounded-md border border-gray-300 bg-white px-4 pr-12 text-sm outline-none transition focus:border-mint-500 focus:ring-3 focus:ring-mint-100"
                   placeholder="비밀번호를 입력하세요"
@@ -255,9 +355,48 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               ) : (
                 <LogIn size={19} />
               )}{" "}
-              로그인
+              {mode === "local" ? "로컬 모드 잠금 해제" : "로그인"}
             </button>
           </form>
+          {(pwa.needRefresh || pwa.canInstall) && (
+            <button
+              type="button"
+              onClick={pwa.needRefresh ? pwa.update : pwa.install}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-mint-200 text-sm font-extrabold text-mint-700 hover:bg-mint-50"
+            >
+              {pwa.needRefresh ? <RotateCcw size={18} /> : <Download size={18} />}
+              {pwa.needRefresh ? "새 버전으로 업데이트" : "이 기기에 앱 설치"}
+            </button>
+          )}
+          {pwa.showIosInstallHint && !pwa.canInstall && !pwa.needRefresh && (
+            <div className="mt-3 rounded-md border border-mint-200 bg-mint-50 px-4 py-3">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-mint-800">
+                <Download size={14} />
+                홈 화면에 앱으로 설치하기
+              </p>
+              <p className="mt-1.5 text-xs leading-5 text-mint-700">
+                Safari 하단의 <span className="font-bold">공유 버튼(□↑)</span>을 탭한 뒤
+                {" "}<span className="font-bold">홈 화면에 추가</span>를 선택하세요.
+              </p>
+            </div>
+          )}
+          {mode === "cloud" ? (
+            <button
+              type="button"
+              onClick={startLocal}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-mint-200 text-sm font-extrabold text-mint-700 hover:bg-mint-50"
+            >
+              <Database size={18} /> 로컬 모드로 시작
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startCloud}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-md border border-mint-200 text-sm font-extrabold text-mint-700 hover:bg-mint-50"
+            >
+              <ShieldCheck size={18} /> DB 모드로 돌아가기
+            </button>
+          )}
           <p className="mt-5 text-center text-xs text-gray-500">
             상담 정보 보호를 위해 공용 기기에서는 사용 후 로그아웃하세요.
           </p>
@@ -321,8 +460,10 @@ function EmptyList({ type }: { type: "today" | "followup" }) {
 
 function Dashboard({
   openQuickCounseling,
+  pwa,
 }: {
   openQuickCounseling: () => void;
+  pwa: ReturnType<typeof usePwa>;
 }) {
   const health = useQuery({
     queryKey: ["health"],
@@ -333,7 +474,6 @@ function Dashboard({
     queryKey: ["dashboard"],
     queryFn: api.dashboard,
   });
-  const pwa = usePwa();
   const stats = dashboard.data?.stats ?? {
     students: 0,
     thisWeekCounseling: 0,
@@ -403,7 +543,7 @@ function Dashboard({
         <StatCard
           label="후속상담 필요"
           value={stats.followUpRequired}
-          unit="명"
+          unit="건"
           tone="coral"
         />
       </section>
@@ -419,21 +559,21 @@ function Dashboard({
               전체 보기 <ChevronRight size={16} />
             </button>
           </div>
-          {!dashboard.data?.todaySchedules.length ? (
+          {!dashboard.data?.todayCounseling.length ? (
             <EmptyList type="today" />
           ) : (
             <ul className="divide-y divide-gray-100">
-              {dashboard.data.todaySchedules.map((item) => (
+              {dashboard.data.todayCounseling.map((item) => (
                 <li key={item.id} className="flex items-center gap-4 px-5 py-4">
                   <time className="w-12 text-sm font-extrabold text-sky-700">
-                    {item.scheduled_time ?? "미정"}
+                    {item.counseling_time ?? "기록"}
                   </time>
                   <div>
                     <p className="text-sm font-extrabold">
                       {maskStudentName(item.student_name)}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {item.note || "상담 일정"}
+                      {item.summary || "상담 기록"}
                     </p>
                   </div>
                 </li>
@@ -448,20 +588,15 @@ function Dashboard({
               <h2 className="font-extrabold">후속상담</h2>
             </div>
             <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-500">
-              {(dashboard.data?.overdueFollowUps.length ?? 0) +
-                (dashboard.data?.upcomingFollowUps.length ?? 0)}
+              {dashboard.data?.followUps.length ?? 0}
               건
             </span>
           </div>
-          {!dashboard.data?.overdueFollowUps.length &&
-          !dashboard.data?.upcomingFollowUps.length ? (
+          {!dashboard.data?.followUps.length ? (
             <EmptyList type="followup" />
           ) : (
             <ul className="divide-y divide-gray-100">
-              {[
-                ...(dashboard.data?.overdueFollowUps ?? []),
-                ...(dashboard.data?.upcomingFollowUps ?? []),
-              ].map((item) => (
+              {(dashboard.data?.followUps ?? []).map((item) => (
                 <li key={item.id} className="px-5 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-extrabold">
@@ -794,15 +929,55 @@ function CounselingEditor({
   );
 }
 
+type StudentSort = "enrollment" | "studentNumber" | "name" | "updated";
+
+function studentSearchNumber(
+  student: Pick<
+    import("../lib/api").StudentSummary,
+    "grade" | "class_no" | "student_no"
+  >,
+) {
+  if (
+    student.grade === null ||
+    student.class_no === null ||
+    student.student_no === null
+  )
+    return "";
+  return `${student.grade}${String(student.class_no).padStart(2, "0")}${String(student.student_no).padStart(2, "0")}`;
+}
+
 function StudentPage() {
   const queryClient = useQueryClient();
   const [studentSearch, setStudentSearch] = useState("");
+  const [sort, setSort] = useState<StudentSort>("enrollment");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmBulkTrash, setConfirmBulkTrash] = useState(false);
   const students = useQuery({
     queryKey: ["students"],
     queryFn: api.students,
-    select: (data) =>
-      data.filter((student) => student.name.includes(studentSearch.trim())),
   });
+  const visibleStudents = [...(students.data ?? [])]
+    .filter((student) => {
+      const query = studentSearch.trim();
+      const numberQuery = query.replaceAll(/\D/g, "");
+      return (
+        !query ||
+        student.name.includes(query) ||
+        (Boolean(numberQuery) && studentSearchNumber(student).includes(numberQuery))
+      );
+    })
+    .sort((left, right) => {
+      if (sort === "name") return left.name.localeCompare(right.name, "ko");
+      if (sort === "updated") return right.updated_at.localeCompare(left.updated_at);
+      if (sort === "studentNumber")
+        return studentSearchNumber(left).localeCompare(studentSearchNumber(right));
+      return (
+        (left.grade ?? 99) - (right.grade ?? 99) ||
+        (left.class_no ?? 999) - (right.class_no ?? 999) ||
+        (left.student_no ?? 999) - (right.student_no ?? 999) ||
+        left.name.localeCompare(right.name, "ko")
+      );
+    });
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [name, setName] = useState("");
@@ -829,6 +1004,34 @@ function StudentPage() {
       await queryClient.invalidateQueries({ queryKey: ["students"] });
     },
   });
+  const bulkTrash = useMutation({
+    mutationFn: () => api.trashStudents(selectedIds),
+    onSuccess: async () => {
+      setSelectedIds([]);
+      setConfirmBulkTrash(false);
+      await queryClient.invalidateQueries({ queryKey: ["students"] });
+    },
+  });
+  const toggleStudent = (studentId: string) => {
+    setSelectedIds((current) =>
+      current.includes(studentId)
+        ? current.filter((id) => id !== studentId)
+        : [...current, studentId],
+    );
+    setConfirmBulkTrash(false);
+  };
+  const allVisibleSelected =
+    visibleStudents.length > 0 &&
+    visibleStudents.every((student) => selectedIds.includes(student.id));
+  const toggleAllVisible = () => {
+    setSelectedIds((current) => {
+      const visibleIds = visibleStudents.map((student) => student.id);
+      return allVisibleSelected
+        ? current.filter((id) => !visibleIds.includes(id))
+        : [...new Set([...current, ...visibleIds])];
+    });
+    setConfirmBulkTrash(false);
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">
@@ -934,15 +1137,60 @@ function StudentPage() {
           value={studentSearch}
           onChange={(e) => setStudentSearch(e.target.value)}
           className="h-11 w-full rounded-md border border-gray-300 bg-white pl-11 pr-3 text-sm shadow-sm"
-          placeholder="학생 이름 검색"
+          placeholder="학생 이름 또는 학번 검색 (예: 10302)"
         />
       </label>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <label className="flex h-10 items-center gap-2 text-sm font-bold text-gray-600">
+          <ArrowUpDown size={16} className="text-gray-400" />
+          <span className="sr-only">학생 목록 정렬</span>
+          <select
+            value={sort}
+            onChange={(event) => setSort(event.target.value as StudentSort)}
+            className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm font-bold text-gray-700"
+          >
+            <option value="enrollment">학년·반·번호순</option>
+            <option value="studentNumber">학번순</option>
+            <option value="name">이름순</option>
+            <option value="updated">최근 수정순</option>
+          </select>
+        </label>
+        {selectedIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-gray-600">
+              {selectedIds.length}명 선택
+            </span>
+            <button
+              onClick={() =>
+                confirmBulkTrash
+                  ? bulkTrash.mutate()
+                  : setConfirmBulkTrash(true)
+              }
+              disabled={bulkTrash.isPending}
+              className={`flex h-10 items-center gap-2 rounded-md px-3 text-sm font-extrabold disabled:opacity-50 ${confirmBulkTrash ? "bg-rose-600 text-white" : "border border-rose-200 text-rose-700 hover:bg-rose-50"}`}
+            >
+              <Trash2 size={16} />
+              {bulkTrash.isPending
+                ? "이동 중"
+                : confirmBulkTrash
+                  ? "한 번 더 눌러 휴지통 이동"
+                  : "선택 학생 휴지통 이동"}
+            </button>
+          </div>
+        )}
+      </div>
+      {bulkTrash.isError && (
+        <p className="mt-3 text-sm font-semibold text-rose-600">
+          {bulkTrash.error.message}
+        </p>
+      )}
 
       <section className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-panel">
         <div className="flex h-16 items-center justify-between border-b border-gray-100 px-5">
           <h2 className="font-extrabold">학생 목록</h2>
           <span className="text-sm font-bold text-gray-500">
-            {students.data?.length ?? 0}명
+            {visibleStudents.length}명
           </span>
         </div>
         {students.isPending && (
@@ -955,7 +1203,7 @@ function StudentPage() {
             학생 목록을 불러오지 못했습니다.
           </div>
         )}
-        {students.data?.length === 0 && (
+        {students.isSuccess && visibleStudents.length === 0 && (
           <div className="grid min-h-52 place-items-center px-4 text-center">
             <div>
               <UsersRound className="mx-auto text-gray-300" size={34} />
@@ -969,11 +1217,30 @@ function StudentPage() {
           </div>
         )}
         <ul className="divide-y divide-gray-100">
-          {students.data?.map((student) => (
-            <li key={student.id}>
+          <li className="flex items-center gap-3 bg-gray-50 px-5 py-3 text-xs font-bold text-gray-500">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleAllVisible}
+              aria-label="현재 목록의 학생 전체 선택"
+              className="size-4 accent-mint-600"
+            />
+            현재 목록 전체 선택
+          </li>
+          {visibleStudents.map((student) => (
+            <li key={student.id} className="flex items-stretch">
+              <label className="flex w-12 shrink-0 cursor-pointer items-center justify-center border-r border-gray-100 hover:bg-mint-50">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(student.id)}
+                  onChange={() => toggleStudent(student.id)}
+                  aria-label={`${studentSearchNumber(student) || "학번 미입력"} 학생 선택`}
+                  className="size-4 accent-mint-600"
+                />
+              </label>
               <button
                 onClick={() => setSelected(student)}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                className="flex min-w-0 flex-1 items-center justify-between gap-4 px-5 py-4 text-left hover:bg-gray-50"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-mint-50 font-extrabold text-mint-700">
@@ -2083,9 +2350,7 @@ function ReportsPage() {
     queryKey: ["search", filters],
     queryFn: () => api.search(filters),
   });
-  const exportCsv = () => {
-    const escape = (value: unknown) =>
-      `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const exportExcel = async () => {
     const rows = [
       ["상담일", "학생", "상태", "한줄 기록", "상세 내용", "후속상담일"],
       ...(results.data ?? []).map((item) => [
@@ -2097,15 +2362,21 @@ function ReportsPage() {
         item.follow_up_date ?? "",
       ]),
     ];
-    const blob = new Blob(
-      [`\ufeff${rows.map((row) => row.map(escape).join(",")).join("\r\n")}`],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `상담기록_${today}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const XLSX = await import("xlsx-js-style");
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet["!cols"] = [
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 36 },
+      { wch: 64 },
+      { wch: 14 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "상담기록");
+    XLSX.writeFile(workbook, `상담기록_${today}.xlsx`, {
+      compression: true,
+    });
   };
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">
@@ -2175,7 +2446,7 @@ function ReportsPage() {
             </span>
           </h2>
           <button
-            onClick={exportCsv}
+            onClick={() => void exportExcel()}
             disabled={!results.data?.length}
             className="flex h-9 items-center gap-2 rounded-md bg-mint-50 px-3 text-xs font-extrabold text-mint-700 disabled:opacity-40"
           >
@@ -2213,7 +2484,106 @@ function ReportsPage() {
   );
 }
 
-function SettingsCore() {
+function PasswordChangePanel({ mode }: { mode: AppMode }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [formError, setFormError] = useState("");
+  const changePassword = useMutation({
+    mutationFn: () => api.changePassword(currentPassword, newPassword),
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setFormError("");
+    },
+  });
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    const minimumLength = mode === "local" ? 4 : 12;
+    if (newPassword.length < minimumLength) {
+      setFormError(`새 비밀번호는 ${minimumLength}자 이상으로 입력해 주세요.`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setFormError("새 비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    changePassword.mutate();
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel"
+    >
+      <span className="grid size-10 place-items-center rounded-lg bg-amber-50 text-amber-700">
+        <KeyRound size={20} />
+      </span>
+      <h2 className="mt-4 font-extrabold">관리자 비밀번호 변경</h2>
+      <div className="mt-4 space-y-3">
+        <label className="block text-xs font-bold text-gray-600">
+          현재 비밀번호
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            autoComplete="current-password"
+            required
+            className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
+          />
+        </label>
+        <label className="block text-xs font-bold text-gray-600">
+          새 비밀번호
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            autoComplete="new-password"
+            minLength={mode === "local" ? 4 : 12}
+            required
+            className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
+          />
+        </label>
+        <label className="block text-xs font-bold text-gray-600">
+          새 비밀번호 확인
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            minLength={mode === "local" ? 4 : 12}
+            required
+            className="mt-1.5 h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-mint-500 focus:ring-2 focus:ring-mint-100"
+          />
+        </label>
+      </div>
+      <button
+        type="submit"
+        disabled={changePassword.isPending}
+        className="mt-4 flex h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-extrabold text-white disabled:opacity-50"
+      >
+        {changePassword.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <KeyRound size={16} />}
+        {changePassword.isPending ? "변경 중" : "비밀번호 변경"}
+      </button>
+      {(formError || changePassword.isError) && (
+        <p className="mt-3 text-xs font-bold text-rose-600">
+          {formError || changePassword.error?.message}
+        </p>
+      )}
+      {changePassword.isSuccess && (
+        <p className="mt-3 text-xs font-bold text-mint-700">
+          {mode === "local"
+            ? "이 기기의 로컬 관리자 비밀번호를 변경했습니다."
+            : "비밀번호를 변경했습니다. 다른 기기에서는 다시 로그인해 주세요."}
+        </p>
+      )}
+    </form>
+  );
+}
+
+function SettingsCore({ mode }: { mode: AppMode }) {
   const queryClient = useQueryClient();
   const trash = useQuery({ queryKey: ["trash"], queryFn: api.trash });
   const integrity = useQuery({
@@ -2249,6 +2619,7 @@ function SettingsCore() {
         <h1 className="mt-1 text-3xl font-extrabold">설정</h1>
       </header>
       <section className="mt-6 grid gap-4 sm:grid-cols-2">
+        <PasswordChangePanel mode={mode} />
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-panel">
           <span className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-700">
             <Download size={20} />
@@ -2641,7 +3012,7 @@ function SettingsPage({
   return (
     <>
       <DataModePanel mode={mode} changed={changed} />
-      <SettingsCore />
+      <SettingsCore mode={mode} />
       <RestorePanel />
     </>
   );
@@ -2650,8 +3021,10 @@ function SettingsPage({
 export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [appMode, setCurrentAppMode] = useState<AppMode>(getAppMode);
   const queryClient = useQueryClient();
+  const pwa = usePwa();
   const changeMode = (mode: AppMode) => {
     setAppMode(mode);
     queryClient.clear();
@@ -2688,6 +3061,10 @@ export function App() {
     return (
       <LoginScreen
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["me"] })}
+        startLocal={() => changeMode("local")}
+        startCloud={() => changeMode("cloud")}
+        mode={appMode}
+        pwa={pwa}
       />
     );
   }
@@ -2699,6 +3076,7 @@ export function App() {
         close={() => setMenuOpen(false)}
         user={currentUser.data}
         logout={() => logout.mutate()}
+        openGuide={() => setGuideOpen(true)}
       />
       <div className="lg:pl-64">
         <div className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/95 px-4 backdrop-blur lg:hidden">
@@ -2716,7 +3094,10 @@ export function App() {
             <Route
               path="/"
               element={
-                <Dashboard openQuickCounseling={() => setQuickOpen(true)} />
+                <Dashboard
+                  openQuickCounseling={() => setQuickOpen(true)}
+                  pwa={pwa}
+                />
               }
             />
             <Route path="/students" element={<StudentPage />} />
@@ -2755,6 +3136,7 @@ export function App() {
         </nav>
       </div>
       {quickOpen && <QuickCounseling close={() => setQuickOpen(false)} />}
+      {guideOpen && <UserGuide close={() => setGuideOpen(false)} />}
     </div>
   );
 }

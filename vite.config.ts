@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['app-icon.svg'],
+      includeAssets: ['app-icon.svg', 'app-icon-192.png', 'app-icon-512.png', 'apple-touch-icon.png'],
       manifest: {
         name: '마음잇기 - 학생상담관리',
         short_name: '마음잇기',
@@ -19,10 +19,28 @@ export default defineConfig({
         lang: 'ko',
         icons: [
           {
+            src: '/app-icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/app-icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/app-icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
             src: '/app-icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
+            purpose: 'any'
           }
         ]
       },
