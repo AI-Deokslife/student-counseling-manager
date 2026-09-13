@@ -885,6 +885,8 @@ db.version(1).stores({
 
 사진/첨부파일은 Base64가 아니라 Blob으로 저장한다.
 
+로컬 관리자 PIN은 `settings` store의 `admin-pin` key에 salt와 PBKDF2-SHA-256 검증값으로 저장한다. 초기 PIN은 `1234`이며, 로그인 세션은 `sessionStorage`에만 유지해 같은 탭의 새로고침에는 유지되고 로그아웃 또는 탭 종료 시 제거한다. 백업 파일에는 PIN 검증값과 로그인 세션을 포함하지 않는다.
+
 ---
 
 ## 16. API Version
@@ -1068,7 +1070,7 @@ Authorization
 → HttpOnly / Secure / SameSite=Strict Cookie
 ```
 
-비밀번호 원문, 해시, salt, 세션 서명키는 Git과 D1에 저장하지 않는다. Access가 활성화되면 Access identity를 우선 사용한다.
+비밀번호 원문, salt, 세션 서명키는 Git과 D1에 저장하지 않는다. 초기 해시는 Worker Secret으로 유지한다. 앱에서 변경한 비밀번호는 bcrypt cost 12 해시와 변경 시각만 `admin_credentials`에 저장할 수 있으며, 해당 시각을 관리자 세션 버전에 포함해 비밀번호 변경 시 기존 관리자 세션을 무효화한다. Access가 활성화되면 Access identity를 우선 사용한다.
 
 ---
 
@@ -1139,6 +1141,8 @@ SKIP_WAITING
 ```
 
 작성 중 draft가 있으면 reload 전에 저장 상태를 확인한다.
+
+`beforeinstallprompt`는 최초 로그인 화면과 대시보드에서 공통으로 감지한다. 설치가 수락되거나 standalone display mode이면 설치 버튼을 숨긴다. 새 Service Worker가 waiting 상태일 때만 업데이트 버튼을 표시하며, 업데이트 적용 뒤에는 다시 표시하지 않는다.
 
 ---
 
@@ -1550,9 +1554,8 @@ GET /api/v1/dashboard?schoolYear=2026
 
 ```json
 {
-  "todaySchedules": [],
-  "overdueFollowUps": [],
-  "upcomingFollowUps": [],
+  "todayCounseling": [],
+  "followUps": [],
   "stats": {
     "students": 132,
     "thisWeekCounseling": 18,

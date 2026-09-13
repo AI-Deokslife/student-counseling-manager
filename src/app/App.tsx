@@ -2067,7 +2067,7 @@ function CalendarPage() {
                 className={`min-h-[72px] border-b border-r border-gray-100 p-1.5 text-left align-top sm:min-h-[104px] sm:p-2 ${day ? "hover:bg-mint-50/50" : "bg-gray-50/60"} ${selected ? "bg-mint-50 ring-2 ring-inset ring-mint-500" : ""}`}
               >
                 <span
-                  className={`grid size-6 place-items-center rounded-full text-xs font-bold sm:size-7 sm:text-sm ${date === now.toLocaleDateString("en-CA") ? "bg-mint-600 text-white" : index % 7 === 0 ? "text-rose-500" : "text-gray-700"}`}
+                  className={`inline-flex size-6 items-center justify-start rounded-full text-xs font-bold sm:size-7 sm:text-sm ${date === now.toLocaleDateString("en-CA") ? "bg-mint-600 px-1.5 text-white" : index % 7 === 0 ? "text-rose-500" : "text-gray-700"}`}
                 >
                   {day}
                 </span>
@@ -2075,7 +2075,13 @@ function CalendarPage() {
                   {daySchedules.slice(0, 2).map((item) => (
                     <span
                       key={item.id}
-                      className="block truncate rounded-sm bg-sky-50 px-1 py-0.5 text-[9px] font-bold text-sky-700 sm:text-[11px]"
+                      className={`block truncate rounded-sm px-1 py-0.5 text-[9px] font-bold sm:text-[11px] ${
+                        item.status === "cancelled"
+                          ? "bg-rose-50 text-rose-400 line-through"
+                          : item.status === "completed"
+                            ? "bg-gray-100 text-gray-500"
+                            : "bg-sky-50 text-sky-700"
+                      }`}
                     >
                       {item.scheduled_time ?? ""}{" "}
                       {maskStudentName(item.student_name)}
@@ -2125,22 +2131,36 @@ function CalendarPage() {
             <li key={item.id}>
               <button
                 onClick={() => setEditing(item)}
-                className="flex w-full items-start gap-4 px-5 py-4 text-left hover:bg-gray-50"
+                className={`flex w-full items-start gap-4 px-5 py-4 text-left hover:bg-gray-50 ${
+                  item.status === "cancelled" ? "opacity-70" : ""
+                }`}
               >
                 <time className="w-14 shrink-0 text-center">
-                  <span className="block text-xs font-bold text-gray-500">
+                  <span className={`block text-xs font-bold ${
+                    item.status === "cancelled" ? "text-rose-400" : "text-gray-500"
+                  }`}>
                     {item.scheduled_date.slice(5, 7)}월
                   </span>
-                  <span className="block text-2xl font-extrabold text-ink">
+                  <span className={`block text-2xl font-extrabold ${
+                    item.status === "cancelled" ? "text-rose-400 line-through" : "text-ink"
+                  }`}>
                     {Number(item.scheduled_date.slice(8, 10))}
                   </span>
                 </time>
                 <div className="min-w-0 flex-1 border-l border-gray-200 pl-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-extrabold">
+                    <p className={`font-extrabold ${
+                      item.status === "cancelled" ? "text-rose-500 line-through" : ""
+                    }`}>
                       {maskStudentName(item.student_name)}
                     </p>
-                    <span className="rounded-full bg-mint-50 px-2 py-1 text-[11px] font-bold text-mint-700">
+                    <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                      item.status === "cancelled"
+                        ? "bg-rose-50 text-rose-600"
+                        : item.status === "completed"
+                          ? "bg-gray-100 text-gray-600"
+                          : "bg-mint-50 text-mint-700"
+                    }`}>
                       {item.status === "scheduled"
                         ? "예정"
                         : item.status === "completed"
@@ -2148,7 +2168,9 @@ function CalendarPage() {
                           : "취소"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm font-semibold text-gray-600">
+                  <p className={`mt-1 text-sm font-semibold ${
+                    item.status === "cancelled" ? "text-rose-400 line-through" : "text-gray-600"
+                  }`}>
                     {item.scheduled_time ?? "시간 미정"}
                     {item.note ? ` · ${item.note}` : ""}
                   </p>

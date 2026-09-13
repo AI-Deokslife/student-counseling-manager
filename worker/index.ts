@@ -3,6 +3,8 @@ import { errorResponse, json, withSecurityHeaders } from "./http";
 import {
   createSession,
   expiredSessionCookie,
+  getAdminPasswordCredential,
+  hashPassword,
   loginClientKey,
   sessionCookie,
   verifyPassword,
@@ -12,6 +14,11 @@ import type { Env } from "./types";
 interface LoginInput {
   username?: unknown;
   password?: unknown;
+}
+
+interface PasswordChangeInput {
+  currentPassword?: unknown;
+  newPassword?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,6 +62,26 @@ async function parseLoginInput(
     )
       return null;
     return { username: body.username, password: body.password };
+  } catch {
+    return null;
+  }
+}
+
+async function parsePasswordChangeInput(
+  request: Request,
+): Promise<{ currentPassword: string; newPassword: string } | null> {
+  try {
+    const body = (await request.json()) as PasswordChangeInput;
+    if (
+      typeof body.currentPassword !== "string" ||
+      typeof body.newPassword !== "string" ||
+      body.currentPassword.length < 8 ||
+      body.currentPassword.length > 256 ||
+      body.newPassword.length < 12 ||
+      body.newPassword.length > 256 ||
+      body.currentPassword === body.newPassword
+    ) return null;
+    return { currentPassword: body.currentPassword, newPassword: body.newPassword };
   } catch {
     return null;
   }
@@ -118,7 +145,6 @@ async function handleApi(
       );
     if (
       !env.ADMIN_USERNAME ||
-      !env.ADMIN_PASSWORD_HASH ||
       !env.SESSION_SECRET
     ) {
       return errorResponse(
@@ -151,10 +177,20 @@ async function handleApi(
       );
     }
 
+    const credential = await getAdminPasswordCredential(env);
+    if (!credential) {
+      return errorResponse(
+        "AUTH_NOT_CONFIGURED",
+        "관리자 로그인 설정이 완료되지 않았습니다.",
+        requestId,
+        503,
+      );
+    }
+
     const usernameMatches = input.username === env.ADMIN_USERNAME;
     const passwordMatches = await verifyPassword(
       input.password,
-      env.ADMIN_PASSWORD_HASH,
+      credential.passwordHash,
     );
     if (!usernameMatches || !passwordMatches) {
       const now = new Date();
@@ -197,7 +233,7 @@ async function handleApi(
     );
     response.headers.append(
       "Set-Cookie",
-      sessionCookie(await createSession(env.SESSION_SECRET)),
+      sessionCookie(await createSession(env.SESSION_SECRET, credential.sessionVersion)),
     );
     return response;
   }
@@ -208,6 +244,51 @@ async function handleApi(
       requestId,
     );
     response.headers.append("Set-Cookie", expiredSessionCookie());
+    return response;
+  }
+
+  if (request.method === "POST" && pathname === "/api/v1/auth/password") {
+    const user = await authenticate(request, env);
+    if (!user)
+      return errorResponse("UNAUTHENTICATED", "로그인이 필요합니다.", requestId, 401);
+    if (!['owner', 'admin'].includes(user.role))
+      return errorResponse("FORBIDDEN", "관리자만 비밀번호를 변경할 수 있습니다.", requestId, 403);
+    if (!env.SESSION_SECRET)
+      return errorResponse("AUTH_NOT_CONFIGURED", "관리자 로그인 설정이 완료되지 않았습니다.", requestId, 503);
+
+    const input = await parsePasswordChangeInput(request);
+    if (!input)
+      return errorResponse(
+        "VALIDATION_ERROR",
+        "현재 비밀번호와 12자 이상의 새 비밀번호를 확인해 주세요.",
+        requestId,
+        400,
+      );
+
+    const credential = await getAdminPasswordCredential(env);
+    if (!credential || !(await verifyPassword(input.currentPassword, credential.passwordHash)))
+      return errorResponse("INVALID_CREDENTIALS", "현재 비밀번호가 올바르지 않습니다.", requestId, 401);
+
+    const updatedAt = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO admin_credentials (id, password_hash, updated_at, updated_by)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           password_hash = excluded.password_hash,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`,
+      ).bind('primary', await hashPassword(input.newPassword), updatedAt, user.email),
+      env.DB.prepare(
+        "INSERT INTO audit_logs (id, workspace_id, entity_type, entity_id, action, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ).bind(crypto.randomUUID(), user.workspace.id, "admin_credential", "primary", "password_change", updatedAt),
+    ]);
+
+    const response = json({ data: { changed: true }, meta: { requestId } }, requestId);
+    response.headers.append(
+      "Set-Cookie",
+      sessionCookie(await createSession(env.SESSION_SECRET, updatedAt)),
+    );
     return response;
   }
 
@@ -449,6 +530,57 @@ async function handleApi(
       },
       requestId,
       201,
+    );
+  }
+
+  if (pathname === "/api/v1/students/bulk-trash" && request.method === "POST") {
+    const user = await authenticate(request, env);
+    if (!user)
+      return errorResponse(
+        "UNAUTHENTICATED",
+        "로그인이 필요합니다.",
+        requestId,
+        401,
+      );
+    const body = await parseObject(request);
+    const ids = Array.isArray(body?.ids) ? body.ids : [];
+    const validIds = ids.filter(
+      (id): id is string =>
+        typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id),
+    );
+    const uniqueIds = [...new Set(validIds)];
+    if (
+      !uniqueIds.length ||
+      uniqueIds.length > 100 ||
+      uniqueIds.length !== ids.length
+    )
+      return errorResponse(
+        "VALIDATION_ERROR",
+        "한 번에 1~100명의 학생만 선택할 수 있습니다.",
+        requestId,
+        400,
+      );
+
+    const updatedAt = new Date().toISOString();
+    const statements = uniqueIds.flatMap((studentId) => [
+      env.DB.prepare(
+        "UPDATE students SET deleted_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL",
+      ).bind(updatedAt, updatedAt, studentId, user.workspace.id),
+      env.DB.prepare(
+        "INSERT INTO audit_logs (id, workspace_id, entity_type, entity_id, action, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ).bind(
+        crypto.randomUUID(),
+        user.workspace.id,
+        "student",
+        studentId,
+        "trash",
+        updatedAt,
+      ),
+    ]);
+    await env.DB.batch(statements);
+    return json(
+      { data: { trashed: uniqueIds.length }, meta: { requestId } },
+      requestId,
     );
   }
 
@@ -976,11 +1108,8 @@ async function handleApi(
     const [
       students,
       week,
-      daily,
-      followUp,
-      todaySchedules,
-      overdueFollowUps,
-      upcomingFollowUps,
+      todayCounseling,
+      followUps,
     ] = await Promise.all([
       env.DB.prepare(
         "SELECT COUNT(*) AS count FROM students WHERE workspace_id = ? AND deleted_at IS NULL",
@@ -993,29 +1122,23 @@ async function handleApi(
         .bind(user.workspace.id, toDate(monday), toDate(sunday))
         .first<{ count: number }>(),
       env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM counseling_records WHERE workspace_id = ? AND deleted_at IS NULL AND counseling_date = ?",
+        `SELECT counseling_records.id, counseling_records.counseling_time, counseling_records.summary, students.name AS student_name
+         FROM counseling_records
+         INNER JOIN students ON students.id = counseling_records.student_id
+         WHERE counseling_records.workspace_id = ? AND counseling_records.deleted_at IS NULL AND counseling_records.counseling_date = ?
+         ORDER BY counseling_records.counseling_time, counseling_records.created_at`,
       )
         .bind(user.workspace.id, today)
-        .first<{ count: number }>(),
+        .all(),
       env.DB.prepare(
-        "SELECT COUNT(DISTINCT student_id) AS count FROM counseling_records WHERE workspace_id = ? AND deleted_at IS NULL AND status IN ('follow_up','in_progress')",
+        `SELECT counseling_records.id, counseling_records.summary, counseling_records.follow_up_date, students.name AS student_name
+         FROM counseling_records
+         INNER JOIN students ON students.id = counseling_records.student_id
+         WHERE counseling_records.workspace_id = ? AND counseling_records.deleted_at IS NULL
+           AND counseling_records.status IN ('follow_up','in_progress') AND counseling_records.follow_up_date IS NOT NULL
+         ORDER BY counseling_records.follow_up_date, counseling_records.created_at`,
       )
         .bind(user.workspace.id)
-        .first<{ count: number }>(),
-      env.DB.prepare(
-        `SELECT schedules.id, schedules.scheduled_time, schedules.note, students.name AS student_name FROM schedules INNER JOIN students ON students.id = schedules.student_id WHERE schedules.workspace_id = ? AND schedules.deleted_at IS NULL AND schedules.status = 'scheduled' AND schedules.scheduled_date = ? ORDER BY schedules.scheduled_time`,
-      )
-        .bind(user.workspace.id, today)
-        .all(),
-      env.DB.prepare(
-        `SELECT counseling_records.id, counseling_records.summary, counseling_records.follow_up_date, students.name AS student_name FROM counseling_records INNER JOIN students ON students.id = counseling_records.student_id WHERE counseling_records.workspace_id = ? AND counseling_records.deleted_at IS NULL AND counseling_records.status IN ('follow_up','in_progress') AND counseling_records.follow_up_date IS NOT NULL AND counseling_records.follow_up_date < ? ORDER BY counseling_records.follow_up_date LIMIT 20`,
-      )
-        .bind(user.workspace.id, today)
-        .all(),
-      env.DB.prepare(
-        `SELECT counseling_records.id, counseling_records.summary, counseling_records.follow_up_date, students.name AS student_name FROM counseling_records INNER JOIN students ON students.id = counseling_records.student_id WHERE counseling_records.workspace_id = ? AND counseling_records.deleted_at IS NULL AND counseling_records.status IN ('follow_up','in_progress') AND counseling_records.follow_up_date BETWEEN ? AND date(?, '+7 days') ORDER BY counseling_records.follow_up_date LIMIT 20`,
-      )
-        .bind(user.workspace.id, today, today)
         .all(),
     ]);
     return json(
@@ -1024,12 +1147,11 @@ async function handleApi(
           stats: {
             students: students?.count ?? 0,
             thisWeekCounseling: week?.count ?? 0,
-            todayCounseling: daily?.count ?? 0,
-            followUpRequired: followUp?.count ?? 0,
+            todayCounseling: todayCounseling.results.length,
+            followUpRequired: followUps.results.length,
           },
-          todaySchedules: todaySchedules.results,
-          overdueFollowUps: overdueFollowUps.results,
-          upcomingFollowUps: upcomingFollowUps.results,
+          todayCounseling: todayCounseling.results,
+          followUps: followUps.results,
         },
         meta: { requestId },
       },

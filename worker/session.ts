@@ -1,9 +1,20 @@
 import type { Env } from './types';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 
 const encoder = new TextEncoder();
 const SESSION_COOKIE = 'maum_session';
 const SESSION_SECONDS = 60 * 60 * 8;
+const ADMIN_CREDENTIAL_ID = 'primary';
+
+interface PasswordCredentialRow {
+  password_hash: string;
+  updated_at: string;
+}
+
+export interface AdminPasswordCredential {
+  passwordHash: string;
+  sessionVersion: string;
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -33,8 +44,26 @@ export async function verifyPassword(password: string, passwordHash: string): Pr
   return compare(password, passwordHash);
 }
 
-export async function createSession(secret: string): Promise<string> {
-  const payload = toBase64Url(encoder.encode(JSON.stringify({ subject: 'admin', expiresAt: Math.floor(Date.now() / 1000) + SESSION_SECONDS })));
+export async function hashPassword(password: string): Promise<string> {
+  return hash(password, 12);
+}
+
+export async function getAdminPasswordCredential(env: Env): Promise<AdminPasswordCredential | null> {
+  const override = await env.DB.prepare(
+    'SELECT password_hash, updated_at FROM admin_credentials WHERE id = ?',
+  ).bind(ADMIN_CREDENTIAL_ID).first<PasswordCredentialRow>();
+
+  if (override) {
+    return { passwordHash: override.password_hash, sessionVersion: override.updated_at };
+  }
+
+  return env.ADMIN_PASSWORD_HASH
+    ? { passwordHash: env.ADMIN_PASSWORD_HASH, sessionVersion: 'initial-secret' }
+    : null;
+}
+
+export async function createSession(secret: string, sessionVersion: string): Promise<string> {
+  const payload = toBase64Url(encoder.encode(JSON.stringify({ subject: 'admin', sessionVersion, expiresAt: Math.floor(Date.now() / 1000) + SESSION_SECONDS })));
   const signature = toBase64Url(await hmac(payload, secret));
   return `${payload}.${signature}`;
 }
@@ -48,8 +77,15 @@ export async function hasValidSession(request: Request, env: Env): Promise<boole
   if (!payload || !signature || extra) return false;
   try {
     if (!equalBytes(await hmac(payload, env.SESSION_SECRET), fromBase64Url(signature))) return false;
-    const data = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as { subject?: string; expiresAt?: number };
-    return data.subject === 'admin' && typeof data.expiresAt === 'number' && data.expiresAt > Math.floor(Date.now() / 1000);
+    const data = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as { subject?: string; sessionVersion?: string; expiresAt?: number };
+    if (
+      data.subject !== 'admin' ||
+      typeof data.sessionVersion !== 'string' ||
+      typeof data.expiresAt !== 'number' ||
+      data.expiresAt <= Math.floor(Date.now() / 1000)
+    ) return false;
+    const credential = await getAdminPasswordCredential(env);
+    return credential?.sessionVersion === data.sessionVersion;
   } catch {
     return false;
   }

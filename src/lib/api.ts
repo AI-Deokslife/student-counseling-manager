@@ -10,6 +10,7 @@ export function getAppMode(): AppMode {
 }
 
 export function setAppMode(mode: AppMode) {
+  if (mode === "cloud") void localApi.logout();
   localStorage.setItem(modeStorageKey, mode);
   window.dispatchEvent(new Event("student-counseling-mode-change"));
 }
@@ -89,19 +90,13 @@ export interface DashboardStats {
 
 export interface DashboardData {
   stats: DashboardStats;
-  todaySchedules: Array<{
+  todayCounseling: Array<{
     id: string;
     student_name: string;
-    scheduled_time: string | null;
-    note: string;
-  }>;
-  overdueFollowUps: Array<{
-    id: string;
-    student_name: string;
+    counseling_time: string | null;
     summary: string;
-    follow_up_date: string;
   }>;
-  upcomingFollowUps: Array<{
+  followUps: Array<{
     id: string;
     student_name: string;
     summary: string;
@@ -172,6 +167,18 @@ const remoteApi = {
           ? "아이디 또는 비밀번호가 올바르지 않습니다."
           : "로그인할 수 없습니다. 잠시 후 다시 시도해주세요.",
       );
+  },
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const response = await fetch("/api/v1/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!response.ok) {
+      if (response.status === 401) throw new Error("현재 비밀번호가 올바르지 않습니다.");
+      if (response.status === 400) throw new Error("새 비밀번호는 12자 이상이어야 하며 현재 비밀번호와 달라야 합니다.");
+      throw new Error("비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
   },
   logout: async () => {
     await fetch("/api/v1/auth/logout", {
@@ -256,6 +263,15 @@ const remoteApi = {
       method: "DELETE",
     });
     if (!response.ok) throw new Error("학생을 휴지통으로 이동하지 못했습니다.");
+  },
+  trashStudents: async (ids: string[]) => {
+    const response = await fetch("/api/v1/students/bulk-trash", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!response.ok)
+      throw new Error("선택한 학생을 휴지통으로 이동하지 못했습니다.");
   },
   createCounseling: async (input: {
     studentId: string;
