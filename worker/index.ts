@@ -30,6 +30,21 @@ interface PushSubscriptionInput {
 const ADMIN_PASSWORD_MIN_LENGTH = 8;
 const REMINDER_MESSAGE = "1시간 후 상담 일정이 있습니다.";
 
+async function sendPushNotification(
+  env: Env,
+  subscription: PushSubscription,
+  body: string,
+) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT)
+    return null;
+  const payload = await buildPushPayload(
+    { data: { title: "상담 일정 알림", body }, options: { ttl: 3_600, urgency: "high" } },
+    subscription,
+    { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY },
+  );
+  return fetch(subscription.endpoint, payload);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -339,6 +354,33 @@ async function handleApi(
     await env.DB.prepare("DELETE FROM push_subscriptions WHERE workspace_id = ? AND user_email = ? AND endpoint = ?")
       .bind(user.workspace.id, user.email, endpoint).run();
     return json({ data: { enabled: false }, meta: { requestId } }, requestId);
+  }
+
+  if (pathname === "/api/v1/notifications/push/test" && request.method === "POST") {
+    const user = await authenticate(request, env);
+    if (!user) return errorResponse("UNAUTHENTICATED", "로그인이 필요합니다.", requestId, 401);
+    const subscriptions = await env.DB.prepare(
+      "SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE workspace_id = ? AND user_email = ? LIMIT 5",
+    ).bind(user.workspace.id, user.email).all<{ id: string; endpoint: string; p256dh: string; auth: string }>();
+    if (!subscriptions.results.length)
+      return errorResponse("PUSH_NOT_SUBSCRIBED", "이 기기의 알림을 먼저 켜 주세요.", requestId, 400);
+    const results = await Promise.all(subscriptions.results.map(async (row) => {
+      try {
+        const response = await sendPushNotification(env, {
+          endpoint: row.endpoint,
+          expirationTime: null,
+          keys: { p256dh: row.p256dh, auth: row.auth },
+        }, "알림 설정이 정상입니다.");
+        if (response?.status === 404 || response?.status === 410)
+          await env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?").bind(row.id).run();
+        return Boolean(response?.ok);
+      } catch {
+        return false;
+      }
+    }));
+    if (!results.some(Boolean))
+      return errorResponse("PUSH_DELIVERY_FAILED", "알림을 보내지 못했습니다. 기기 설정을 확인해 주세요.", requestId, 502);
+    return json({ data: { sent: true }, meta: { requestId } }, requestId);
   }
 
   if (request.method === "GET" && pathname === "/api/v1/me") {
@@ -2315,17 +2357,16 @@ async function sendScheduleReminders(env: Env) {
       keys: { p256dh: reminder.p256dh, auth: reminder.auth },
     };
     try {
-      const payload = await buildPushPayload(
-        { data: { title: "상담 일정 알림", body: REMINDER_MESSAGE }, options: { ttl: 3_600, urgency: "high" } },
-        subscription,
-        { subject: env.VAPID_SUBJECT!, publicKey: env.VAPID_PUBLIC_KEY!, privateKey: env.VAPID_PRIVATE_KEY! },
-      );
-      const response = await fetch(reminder.endpoint, payload);
+      const response = await sendPushNotification(env, subscription, REMINDER_MESSAGE);
+      if (!response) return;
       if (response.status === 404 || response.status === 410) {
         await env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?").bind(reminder.subscription_id).run();
         return;
       }
-      if (!response.ok) return;
+      if (!response.ok) {
+        console.log({ route: "push_reminder", status: response.status });
+        return;
+      }
       await env.DB.prepare(
         "INSERT OR IGNORE INTO schedule_reminder_deliveries (schedule_id, subscription_id, sent_at) VALUES (?, ?, ?)",
       ).bind(reminder.schedule_id, reminder.subscription_id, now.toISOString()).run();

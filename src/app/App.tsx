@@ -2658,6 +2658,11 @@ function PushNotificationPanel() {
     },
     onError: (error) => setMessage(error.message),
   });
+  const test = useMutation({
+    mutationFn: api.testPushNotifications,
+    onSuccess: () => setMessage("테스트 알림을 보냈습니다. 휴대폰에서 확인해 주세요."),
+    onError: (error) => setMessage(error.message),
+  });
 
   useEffect(() => {
     void navigator.serviceWorker?.ready.then(async (registration) => {
@@ -2682,6 +2687,16 @@ function PushNotificationPanel() {
         {toggle.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Bell size={16} />}
         {enabled ? "알림 끄기" : "1시간 전 알림 켜기"}
       </button>
+      {enabled && (
+        <button
+          onClick={() => { setMessage(""); test.mutate(); }}
+          disabled={test.isPending}
+          className="mt-2 flex h-10 items-center gap-2 rounded-md border border-mint-200 px-4 text-sm font-extrabold text-mint-700 disabled:opacity-50"
+        >
+          {test.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Bell size={16} />}
+          테스트 알림 보내기
+        </button>
+      )}
       {message && (
         <p className={`mt-3 text-xs font-bold ${toggle.isError ? "text-rose-600" : "text-mint-700"}`}>
           {message}

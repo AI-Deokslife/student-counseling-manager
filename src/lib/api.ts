@@ -211,6 +211,13 @@ const remoteApi = {
     });
     if (!response.ok) throw new Error("알림을 끄지 못했습니다.");
   },
+  testPushNotifications: async () => {
+    const response = await fetch("/api/v1/notifications/push/test", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error("테스트 알림을 보내지 못했습니다. 기기 설정을 확인해 주세요.");
+  },
   students: async (): Promise<StudentSummary[]> => {
     const response = await fetch("/api/v1/students", {
       headers: { Accept: "application/json" },
