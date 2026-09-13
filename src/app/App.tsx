@@ -2640,8 +2640,9 @@ function PushNotificationPanel() {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") throw new Error("알림 권한이 필요합니다.");
       const { publicKey } = await api.pushNotificationConfig();
+      const base64Key = publicKey.replace(/-/g, "+").replace(/_/g, "/");
       const applicationServerKey = Uint8Array.from(
-        atob(publicKey.replace(/-/g, "+").replace(/_/g, "/")),
+        atob(base64Key.padEnd(base64Key.length + ((4 - (base64Key.length % 4)) % 4), "=")),
         (character) => character.charCodeAt(0),
       );
       const subscription = await registration.pushManager.subscribe({
