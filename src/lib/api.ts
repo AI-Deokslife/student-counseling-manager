@@ -6,7 +6,9 @@ export type AppMode = "cloud" | "local";
 const modeStorageKey = "student-counseling-data-mode";
 
 export function getAppMode(): AppMode {
-  return localStorage.getItem(modeStorageKey) === "local" ? "local" : "cloud";
+  const stored = localStorage.getItem(modeStorageKey);
+  if (stored === "cloud") return "cloud";
+  return "local";
 }
 
 export function setAppMode(mode: AppMode) {
